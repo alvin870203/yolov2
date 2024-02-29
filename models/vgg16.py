@@ -1,10 +1,5 @@
 """
-Full definition of a Darknet19 model, all of it in this single file.
-Ref:
-1) the official Darknet implementation:
-https://github.com/pjreddie/darknet/blob/master/examples/classifier.c
-https://github.com/pjreddie/darknet/blob/master/cfg/darknet19.cfg
-https://github.com/pjreddie/darknet/blob/master/cfg/darknet19_448.cfg
+VGG16 w/ batchnorm from torchvision, for debugging and testing purposes.
 """
 
 import math
@@ -16,141 +11,23 @@ import torch
 from torch import Tensor
 import torch.nn as nn
 from torch.nn import functional as F
+import torchvision
 
 
 @dataclass
-class Darknet19Config:
+class Vgg16Config:
     img_h: int = 224
     img_w: int = 224
     n_class: int = 1000
 
 
-class Darknet19Conv2d(nn.Module):
-    """
-    A Conv2d layer with a BarchNorm2d and a LeakyReLU activation.
-    """
-    def __init__(self, in_channels: int, out_channels: int, **kwargs: Any) -> None:
-        super().__init__()
-        # Darknet implementation uses bias=False when batch norm is used.
-        self.conv = nn.Conv2d(in_channels, out_channels, bias=False, **kwargs)
-        self.bn = nn.BatchNorm2d(out_channels, eps=1e-06, momentum=0.01)
-
-    def forward(self, x: Tensor) -> Tensor:
-        x = self.conv(x)
-        x = self.bn(x)
-        return F.leaky_relu(x, 0.1, inplace=True)
-
-
-class Darknet19Backbone(nn.Module):
-    """
-    Backbone of the Darknet19 model, i.e., first 18th conv layers of YOLOv1.
-    """
-    def __init__(self, config: Darknet19Config) -> None:
-        super().__init__()
-        self.conv1 = Darknet19Conv2d(3, 32, kernel_size=3, stride=1, padding=1)
-        self.maxpool1 = nn.MaxPool2d(2, stride=2)
-
-        self.conv2 = Darknet19Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
-        self.maxpool2 = nn.MaxPool2d(2, stride=2)
-
-        self.conv3 = Darknet19Conv2d(64, 128, kernel_size=3, stride=1, padding=1)
-        self.conv4 = Darknet19Conv2d(128, 64, kernel_size=1, stride=1, padding=0)
-        self.conv5 = Darknet19Conv2d(64, 128, kernel_size=3, stride=1, padding=1)
-        self.maxpool3 = nn.MaxPool2d(2, stride=2)
-
-        self.conv6 = Darknet19Conv2d(128, 256, kernel_size=3, stride=1, padding=1)
-        self.conv7 = Darknet19Conv2d(256, 128, kernel_size=1, stride=1, padding=0)
-        self.conv8 = Darknet19Conv2d(128, 256, kernel_size=3, stride=1, padding=1)
-        self.maxpool4 = nn.MaxPool2d(2, stride=2)
-
-        self.conv9 = Darknet19Conv2d(256, 512, kernel_size=3, stride=1, padding=1)
-        self.conv10 = Darknet19Conv2d(512, 256, kernel_size=1, stride=1, padding=0)
-        self.conv11 = Darknet19Conv2d(256, 512, kernel_size=3, stride=1, padding=1)
-        self.conv12 = Darknet19Conv2d(512, 256, kernel_size=1, stride=1, padding=0)
-        self.conv13 = Darknet19Conv2d(256, 512, kernel_size=3, stride=1, padding=1)
-        self.maxpool5 = nn.MaxPool2d(2, stride=2)
-
-        self.conv14 = Darknet19Conv2d(512, 1024, kernel_size=3, stride=1, padding=1)
-        self.conv15 = Darknet19Conv2d(1024, 512, kernel_size=1, stride=1, padding=0)
-        self.conv16 = Darknet19Conv2d(512, 1024, kernel_size=3, stride=1, padding=1)
-        self.conv17 = Darknet19Conv2d(1024, 512, kernel_size=1, stride=1, padding=0)
-        self.conv18 = Darknet19Conv2d(512, 1024, kernel_size=3, stride=1, padding=1)
-
-
-    def forward(self, x: Tensor) -> Tensor:
-        """
-        Args:
-            x (Tensor): size(N, 3, img_h, img_w)
-        Returns:
-            x (Tensor): (N, 1024, img_h / 224 * 7, img_w / 224 * 7)
-        """
-        # N x 3 x 224 (or 256 or 448) x 224 (or 256 or 448)
-        x = self.conv1(x)
-        # N x 32 x 224 (or 256 or 448) x 224 (or 256 or 448)
-        x = self.maxpool1(x)
-        # N x 32 x 112 (or 128 or 224) x 112 (or 128 or 224)
-
-        x = self.conv2(x)
-        # N x 64 x 112 (or 128 or 224) x 112 (or 128 or 224)
-        x = self.maxpool2(x)
-        # N x 64 x 56 (or 64 or 112) x 56 (or 64 or 112)
-
-        x = self.conv3(x)
-        # N x 128 x 56 (or 64 or 112) x 56 (or 64 or 112)
-        x = self.conv4(x)
-        # N x 64 x 56 (or 64 or 112) x 56 (or 64 or 112)
-        x = self.conv5(x)
-        # N x 128 x 56 (or 64 or 112) x 56 (or 64 or 112)
-        x = self.maxpool3(x)
-        # N x 128 x 28 (or 32 or 56) x 28 (or 32 or 56)
-
-        x = self.conv6(x)
-        # N x 256 x 28 (or 32 or 56) x 28 (or 32 or 56)
-        x = self.conv7(x)
-        # N x 128 x 28 (or 32 or 56) x 28 (or 32 or 56)
-        x = self.conv8(x)
-        # N x 256 x 28 (or 32 or 56) x 28 (or 32 or 56)
-        x = self.maxpool4(x)
-        # N x 256 x 14 (or 16 or 28) x 14 (or 16 or 28)
-
-        x = self.conv9(x)
-        # N x 512 x 14 (or 16 or 28) x 14 (or 16 or 28)
-        x = self.conv10(x)
-        # N x 256 x 14 (or 16 or 28) x 14 (or 16 or 28)
-        x = self.conv11(x)
-        # N x 512 x 14 (or 16 or 28) x 14 (or 16 or 28)
-        x = self.conv12(x)
-        # N x 256 x 14 (or 16 or 28) x 14 (or 16 or 28)
-        x = self.conv13(x)
-        # N x 512 x 14 (or 16 or 28) x 14 (or 16 or 28)
-        x = self.maxpool5(x)
-        # N x 512 x 7 (or 8 or 14) x 7 (or 8 or 14)
-
-        x = self.conv14(x)
-        # N x 1024 x 7 (or 8 or 14) x 7 (or 8 or 14)
-        x = self.conv15(x)
-        # N x 512 x 7 (or 8 or 14) x 7 (or 8 or 14)
-        x = self.conv16(x)
-        # N x 1024 x 7 (or 8 or 14) x 7 (or 8 or 14)
-        x = self.conv17(x)
-        # N x 512 x 7 (or 8 or 14) x 7 (or 8 or 14)
-        x = self.conv18(x)
-        # N x 1024 x 7 (or 8 or 14) x 7 (or 8 or 14)
-
-        return x
-
-
-class Darknet19(nn.Module):
-    def __init__(self, config: Darknet19Config) -> None:
+class Vgg16(nn.Module):
+    def __init__(self, config: Vgg16Config) -> None:
         super().__init__()
         self.config = config
 
-        self.backbone = Darknet19Backbone(config)
-        self.head = nn.Sequential(
-            nn.Conv2d(1024, config.n_class, bias=True, kernel_size=1, stride=1, padding=0),
-            nn.AdaptiveAvgPool2d((1, 1)),
-            nn.Flatten(),
-        )
+        # Batchnorm version since input img might not be normalized
+        self.model = torchvision.models.vgg16_bn(weights=None, num_classes=config.n_class)
 
         # Init all weights
         self.apply(self._init_weights)
@@ -179,7 +56,6 @@ class Darknet19(nn.Module):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.01)
             if module.bias is not None:
                 torch.nn.init.zeros_(module.bias)
-        # TODO: zero_init_last / trunc_normal_ / head_init_scale in timm?
 
 
     def _compute_loss(self, logits: Tensor, targets: Tensor) -> Tensor:
@@ -205,11 +81,9 @@ class Darknet19(nn.Module):
         """
         device = imgs.device
 
-        # Forward the Darknet16 model itself
+        # Forward the Vgg16 model itself
         # N x 3 x 224 (or 256 or 448) x 224 (or 256 or 448)
-        x = self.backbone(imgs)
-        # N x 1024 x 7 (or 8 or 14) x 7 (or 8 or 14)
-        logits = self.head(x)
+        logits = self.model(imgs)
         # N x n_class
 
         if targets is not None:
@@ -291,11 +165,11 @@ class Darknet19(nn.Module):
 
 
 if __name__ == '__main__':
-    # Test the model by `python -m models.darknet19` from the workspace directory
-    config = Darknet19Config()
-    # config = Darknet19Config(img_h=256, img_w=256)
-    # config = Darknet19Config(img_h=448, img_w=448)
-    model = Darknet19(config)
+    # Test the model by `python -m models.vgg16` from the workspace directory
+    config = Vgg16Config()
+    # config = Vgg16Config(img_h=256, img_w=256)
+    # config = Vgg16Config(img_h=448, img_w=448)
+    model = Vgg16(config)
     print(model)
     print(f"num params: {model.get_num_params():,}")
 
