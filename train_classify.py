@@ -287,8 +287,8 @@ if compile:
 
 
 # Helps estimate an arbitrarily accurate loss over either split using many batches
-# Not accurate since metrics were averaged at each iteration (exact would have been a sum),
-# then averaged altogether again at the end
+# Not accurate since losses were averaged at each iteration (exact would have been a sum),
+# then averaged altogether again at the end, but the metrics are accurate.
 @torch.inference_mode()
 def estimate_loss():
     out_losses = {}
@@ -297,8 +297,8 @@ def estimate_loss():
     model.eval()
     for split in ['train', 'val']:
         losses = torch.zeros(eval_iters * gradient_accumulation_steps)
-        acc1 = torch.zeros(eval_iters * gradient_accumulation_steps)
-        acc5 = torch.zeros(eval_iters * gradient_accumulation_steps)
+        acc1, acc5 = 0.0, 0.0
+        n_seen = 0
         for k in range(eval_iters * gradient_accumulation_steps):
             X, Y = BatchGetter.get_batch(split)
             with ctx:
@@ -307,12 +307,12 @@ def estimate_loss():
             _, pred = logits.topk(5, 1, True, True)
             pred = pred.t()
             correct = pred.eq(Y.view(1, -1).expand_as(pred))
-            batch_size = X.size(0)
-            acc1[k] = correct[:1].reshape(-1).float().sum(0).item() * 100.0 / batch_size
-            acc5[k] = correct[:5].reshape(-1).float().sum(0).item() * 100.0 / batch_size
+            n_seen += X.size(0)
+            acc1 += correct[:1].reshape(-1).float().sum(0).item()
+            acc5 += correct[:5].reshape(-1).float().sum(0).item()
         out_losses[split] = losses.mean()
-        out_acc1[split] = acc1.mean()
-        out_acc5[split] = acc5.mean()
+        out_acc1[split] = 100 * acc1 / n_seen
+        out_acc5[split] = 100 * acc5 / n_seen
     model.train()
     return out_losses, out_acc1, out_acc5
 
