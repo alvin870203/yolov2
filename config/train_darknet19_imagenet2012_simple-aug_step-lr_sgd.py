@@ -13,7 +13,6 @@ img_w = 224
 n_class = 1000
 
 # Transform related
-# No augmentation
 imgs_mean = (0.0, 0.0, 0.0)
 imgs_std = (1.0, 1.0, 1.0)
 scale_min = 0.08  # torchvision default
