@@ -289,7 +289,7 @@ if compile:
 # Helps estimate an arbitrarily accurate loss over either split using many batches
 # Not accurate since metrics were averaged at each iteration (exact would have been a sum),
 # then averaged altogether again at the end
-@torch.no_grad()
+@torch.inference_mode()
 def estimate_loss():
     out_losses = {}
     out_acc1 = {}

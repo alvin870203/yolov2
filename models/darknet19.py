@@ -278,7 +278,7 @@ class Darknet19(nn.Module):
         raise NotImplementedError("FUTURE: estimate TOPS for Extraction model")
 
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def generate(self, imgs, top_k=None):
         """
         Predict on test imgs and return the top_k predictions.
