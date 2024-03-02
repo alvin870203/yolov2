@@ -4,6 +4,7 @@ Training & validation dataloaders of ImageNet2012 classification dataset.
 
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Literal, Optional, Sequence, Tuple, Type, Union
+import math
 import numpy as np
 import torch
 import torch.nn as nn
@@ -11,25 +12,8 @@ from torch.utils.data.dataloader import DataLoader
 import torchvision
 from torchvision import tv_tensors
 from torchvision.transforms import v2
-from torchvision.transforms.v2 import functional as F
+from torchvision.transforms.v2 import functional as F, InterpolationMode
 from torchvision.transforms.v2.functional._utils import _FillType
-
-
-class ZoomOut(nn.Module):
-    def __init__(self,
-                 scale: float,
-                 fill: Union[_FillType, Dict[Union[Type, str], _FillType]] = 0,
-                 padding_mode: Literal["constant", "edge", "reflect", "symmetric"] = "constant",) -> None:
-        super().__init__()
-        self.scale = scale
-        self.fill = fill
-        self.padding_mode = padding_mode
-
-    def forward(self, img: torch.Tensor) -> torch.Tensor:
-        orig_h, orig_w = img.shape[-2:]
-        new_h, new_w = int(orig_h * self.scale), int(orig_w * self.scale)
-        padding = ((new_w - orig_w) // 2, (new_h - orig_h) // 2)
-        return F.pad(img, padding, self.fill, self.padding_mode)
 
 
 @dataclass
@@ -57,15 +41,13 @@ class ImageNetTrainDataLoader(DataLoader):
             data_dir, split='train',
             transform=v2.Compose([
                 v2.ToImage(),
-
-                # TODO: test simple augmentation
-                # v2.Resize(size=max(config.img_h, config.img_w), antialias=True),
-                # v2.ColorJitter(brightness=config.brightness, contrast=config.contrast,
-                #                saturation=config.saturation, hue=config.hue),
-                # ZoomOut(scale=config.scale_max, fill=0, padding_mode='constant'),
-                # v2.RandomRotation(degrees=config.degrees),
-
-                v2.RandomResizedCrop(size=(config.img_h, config.img_w), scale=(config.scale_min, 1.0),
+                v2.Resize(size=max(config.img_h, config.img_w), antialias=True),
+                v2.ColorJitter(brightness=config.brightness, contrast=config.contrast,
+                               saturation=config.saturation, hue=config.hue),
+                v2.Pad(padding=(int(config.img_h * (config.scale_max - 1) / 2),
+                                int(config.img_w * (config.scale_max - 1) / 2)), fill=0, padding_mode='constant'),
+                v2.RandomRotation(degrees=config.degrees),
+                v2.RandomResizedCrop(size=(config.img_h, config.img_w), scale=(config.scale_min ** 2, 1.0),
                                      ratio=(config.ratio_min, config.ratio_max), antialias=True),
                 v2.RandomHorizontalFlip(p=config.flip_p),
                 v2.ToDtype(torch.float32, scale=True),
@@ -84,11 +66,9 @@ class ImageNetValDataLoader(DataLoader):
             data_dir, split='val',
             transform=v2.Compose([
                 v2.ToImage(),
-
-                # TODO: test simple augmentation
-                # v2.Resize(size=max(config.img_h, config.img_w), antialias=True),
-                v2.Resize(size=int(max(config.img_h, config.img_w) * 256 / 224), antialias=True),
-
+                v2.Resize(size=max(config.img_h, config.img_w),
+                          max_size=max(config.img_h, config.img_w) + 1,  # max_size must > size
+                          antialias=True),
                 v2.CenterCrop(size=(config.img_h, config.img_w)),
                 v2.ToDtype(torch.float32, scale=True),
                 v2.Normalize(mean=config.imgs_mean, std=config.imgs_std),
