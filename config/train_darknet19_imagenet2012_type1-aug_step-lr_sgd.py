@@ -1,9 +1,10 @@
-# Config for training Darknet19 model on ImageNet2012 dataset for image classification as the backbone for YOLOv2
+# Config for finetuning Darknet19 model on ImageNet2012 dataset for image classification as the backbone for YOLOv2
 import time
 
 # Task related
 task_name = 'classify'
-init_from = 'scratch'
+init_from = 'pretrained'
+from_ckpt = 'out/darknet19_imagenet2012/20240301-062829/ckpt_last.pt'
 
 # Data related
 dataset_name = 'imagenet2012'
@@ -49,8 +50,8 @@ use_fused = True  # somehow use_fused=True is incompatible to compile=True in th
 
 # Eval related
 # imagenet2012 val set has 50,000 imgs, so 1 epoch ~= 98 iters
-eval_interval = 5006  # keep frequent if we'll overfit
-eval_iters = 2  # use partial val set to save time
+eval_interval = 2503  # keep frequent if we'll overfit
+eval_iters = 98  # use entire val to get good estimate
 
 # Log related
 timestamp = time.strftime('%Y%m%d-%H%M%S', time.localtime())
