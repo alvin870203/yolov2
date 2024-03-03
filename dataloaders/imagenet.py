@@ -41,7 +41,8 @@ class ImageNetTrainDataLoader(DataLoader):
             data_dir, split='train',
             transform=v2.Compose([
                 v2.ToImage(),
-                v2.RandomResizedCrop(size=max(config.img_h, config.img_w), scale=(config.scale_min, config.scale_max),
+                v2.RandomResizedCrop(size=max(config.img_h, config.img_w),
+                                     scale=(config.scale_min ** 2, config.scale_max ** 2),
                                      ratio=(config.ratio_min, config.ratio_max), antialias=True),
                 v2.RandomHorizontalFlip(p=config.flip_p),
                 v2.TrivialAugmentWide(),

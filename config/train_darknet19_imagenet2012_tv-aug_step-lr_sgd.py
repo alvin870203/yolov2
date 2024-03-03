@@ -13,13 +13,13 @@ img_w = 224
 n_class = 1000
 
 # Transform related
-brightness = 0.75
-contrast = 0.75
-saturation = 0.75
-hue = 0.5
-degrees = 7
-scale_min = 0.5
-scale_max = 2.0
+brightness = 0.0
+contrast = 0.0
+saturation = 0.0
+hue = 0.0
+degrees = 0.0
+scale_min = 0.283
+scale_max = 1.0
 ratio_min = 3.0 / 4.0
 ratio_max = 4.0 / 3.0
 flip_p = 0.5
