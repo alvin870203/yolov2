@@ -41,15 +41,10 @@ class ImageNetTrainDataLoader(DataLoader):
             data_dir, split='train',
             transform=v2.Compose([
                 v2.ToImage(),
-                v2.Resize(size=max(config.img_h, config.img_w), antialias=True),
-                v2.ColorJitter(brightness=config.brightness, contrast=config.contrast,
-                               saturation=config.saturation, hue=config.hue),
-                v2.Pad(padding=(int(config.img_h * (config.scale_max - 1) / 2),
-                                int(config.img_w * (config.scale_max - 1) / 2)), fill=0, padding_mode='constant'),
-                v2.RandomRotation(degrees=config.degrees),
-                v2.RandomResizedCrop(size=(config.img_h, config.img_w), scale=(config.scale_min ** 2, 1.0),
+                v2.RandomResizedCrop(size=max(config.img_h, config.img_w), scale=(config.scale_min, config.scale_max),
                                      ratio=(config.ratio_min, config.ratio_max), antialias=True),
                 v2.RandomHorizontalFlip(p=config.flip_p),
+                v2.TrivialAugmentWide(),
                 v2.ToDtype(torch.float32, scale=True),
                 v2.Normalize(mean=config.imgs_mean, std=config.imgs_std),
             ])
@@ -66,9 +61,7 @@ class ImageNetValDataLoader(DataLoader):
             data_dir, split='val',
             transform=v2.Compose([
                 v2.ToImage(),
-                v2.Resize(size=max(config.img_h, config.img_w),
-                          max_size=max(config.img_h, config.img_w) + 1,  # max_size must > size
-                          antialias=True),
+                v2.Resize(size=int(max(config.img_h, config.img_w) * 256 / 224), antialias=True),
                 v2.CenterCrop(size=(config.img_h, config.img_w)),
                 v2.ToDtype(torch.float32, scale=True),
                 v2.Normalize(mean=config.imgs_mean, std=config.imgs_std),
