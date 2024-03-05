@@ -13,6 +13,8 @@ img_w = 224
 n_class = 1000
 
 # Transform related
+imgs_mean = (0.0, 0.0, 0.0)
+imgs_std = (1.0, 1.0, 1.0)
 brightness = 0.4
 contrast = 0.4
 saturation = 0.4
