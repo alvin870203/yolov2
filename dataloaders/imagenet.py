@@ -3,7 +3,8 @@ Training & validation dataloaders of ImageNet2012 classification dataset.
 """
 
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Literal, Optional, Sequence, Tuple, Type, Union
+import warnings
+from typing import Any, Callable, cast, Dict, List, Literal, Optional, Sequence, Tuple, Type, Union
 import math
 import numpy as np
 import torch
@@ -14,6 +15,66 @@ from torchvision import tv_tensors
 from torchvision.transforms import v2
 from torchvision.transforms.v2 import functional as F, InterpolationMode
 from torchvision.transforms.v2.functional._utils import _FillType
+
+
+class RandomResize(v2.RandomResize):
+    def __init__(
+        self,
+        size: Union[int, Sequence[int]],
+        scale: Tuple[float, float] = (0.85, 1.05),
+        scale_p: float = 0.9,
+        ratio: Tuple[float, float] = (0.9, 1.11),
+        ratio_p: float = 0.9,
+        interpolation: Union[InterpolationMode, int] = InterpolationMode.BILINEAR,
+        antialias: Optional[Union[str, bool]] = "warn",
+    ) -> None:
+        super().__init__(None, None, interpolation, antialias)
+        self.size = v2._utils._setup_size(size, error_msg="Please provide only two dimensions (h, w) for size.")
+        if not isinstance(scale, Sequence):
+            raise TypeError("Scale should be a sequence")
+        scale = cast(Tuple[float, float], scale)
+        if not isinstance(ratio, Sequence):
+            raise TypeError("Ratio should be a sequence")
+        ratio = cast(Tuple[float, float], ratio)
+        if (scale[0] > scale[1]) or (ratio[0] > ratio[1]):
+            warnings.warn("Scale and ratio should be of kind (min, max)")
+        self.scale = scale
+        self.ratio = ratio
+        self.scale_p = scale_p
+        self.ratio_p = ratio_p
+        self._log_ratio = torch.log(torch.tensor(ratio))
+        self._min_factor = min((1 / self.ratio[0], self.ratio[0],
+                                1 / self.ratio[1], self.ratio[1])) / math.sqrt(max(*self.scale))
+        if self._min_factor < 0.5:
+            raise ValueError("The minimum factor is less than 0.5, please decrease scale_max or adjust ratio.")
+
+
+    def _get_params(self, flat_inputs: List[Any]) -> Dict[str, Any]:
+        img_h, img_w = img_size = v2._utils.query_size(flat_inputs)
+        target_h, target_w = self.size
+        ratio_h = img_h / target_h
+        ratio_w = img_w / target_w
+        ratio = min(ratio_h, ratio_w)
+
+        if torch.rand(1) < self.scale_p:
+            ratio_factor = torch.empty(1).uniform_(*self.scale)
+            ratio_factor = 1.0 / math.sqrt(ratio_factor)
+            ratio_factor = (ratio_factor, ratio_factor)
+        else:
+            ratio_factor = (1.0, 1.0)
+
+        if torch.rand(1) < self.ratio_p:
+            aspect_ratio = torch.exp(
+                torch.empty(1).uniform_(
+                    self._log_ratio[0],
+                    self._log_ratio[1],
+                )
+            ).item()
+            aspect_factor = math.sqrt(aspect_ratio)
+            ratio_factor = (ratio_factor[0] / aspect_factor, ratio_factor[1] * aspect_factor)
+
+        size = [round(x * f / ratio) for x, f in zip(img_size, ratio_factor)]
+        return dict(size=size)
 
 
 @dataclass
@@ -41,11 +102,12 @@ class ImageNetTrainDataLoader(DataLoader):
             data_dir, split='train',
             transform=v2.Compose([
                 v2.ToImage(),
-                v2.RandomResizedCrop(size=max(config.img_h, config.img_w),
-                                     scale=(config.scale_min ** 2, config.scale_max ** 2),
-                                     ratio=(config.ratio_min, config.ratio_max), antialias=True),
+                RandomResize(size=(config.img_h, config.img_w), scale=(config.scale_min ** 2, config.scale_max ** 2),
+                             ratio=(config.ratio_min, config.ratio_max), antialias=True),
+                v2.RandomCrop(size=(config.img_h, config.img_w), pad_if_needed=True, padding_mode='reflect'),
                 v2.RandomHorizontalFlip(p=config.flip_p),
-                v2.TrivialAugmentWide(),
+                v2.ColorJitter(brightness=config.brightness, contrast=config.contrast,
+                               saturation=config.saturation, hue=config.hue),
                 v2.ToDtype(torch.float32, scale=True),
                 v2.Normalize(mean=config.imgs_mean, std=config.imgs_std),
             ])
