@@ -379,24 +379,25 @@ while True:
                 "lr": lr
             })
 
-        is_last_eval = iter_num + eval_interval > max_iters
-        if losses['val'] < best_val_loss or always_save_checkpoint or is_last_eval:
+        checkpoint = {
+            'model': model.state_dict(),
+            'optimizer': optimizer.state_dict(),
+            'model_args': model_args,
+            'iter_num': iter_num,
+            'best_val_loss': best_val_loss,
+            'config': config,
+            'rng_state': torch.get_rng_state()
+        }
+        if losses['val'] < best_val_loss or always_save_checkpoint:
             best_val_loss = losses['val']
-            checkpoint = {
-                'model': model.state_dict(),
-                'optimizer': optimizer.state_dict(),
-                'model_args': model_args,
-                'iter_num': iter_num,
-                'best_val_loss': best_val_loss,
-                'config': config,
-                'rng_state': torch.get_rng_state()
-            }
+            checkpoint['best_val_loss'] = best_val_loss
             if iter_num > 0:
                 tqdm.write(f"saving checkpoint to {out_dir}")
                 torch.save(checkpoint, os.path.join(out_dir, 'ckpt.pt'))  # TODO: save top k checkpoints
-            if is_last_eval and not always_save_checkpoint:
-                tqdm.write(f"saving last checkpoint to {out_dir}")
-                torch.save(checkpoint, os.path.join(out_dir, 'ckpt_last.pt'))
+        if iter_num + eval_interval > max_iters:  # last eval
+            checkpoint['best_val_loss'] = losses['val']
+            tqdm.write(f"saving last checkpoint to {out_dir}")
+            torch.save(checkpoint, os.path.join(out_dir, 'ckpt_last.pt'))
 
     if iter_num == 0 and eval_only:
         break
