@@ -3,8 +3,7 @@ import time
 
 # Task related
 task_name = 'classify'
-init_from = 'pretrained'
-from_ckpt = 'out/darknet19_imagenet2012/20240301-062829/ckpt_last.pt'
+init_from = 'scratch'
 
 # Data related
 dataset_name = 'imagenet2012'
