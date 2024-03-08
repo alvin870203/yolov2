@@ -102,12 +102,11 @@ class ImageNetTrainDataLoader(DataLoader):
             data_dir, split='train',
             transform=v2.Compose([
                 v2.ToImage(),
-                RandomResize(size=(config.img_h, config.img_w), scale=(config.scale_min ** 2, config.scale_max ** 2),
-                             ratio=(config.ratio_min, config.ratio_max), antialias=True),
-                v2.RandomCrop(size=(config.img_h, config.img_w), pad_if_needed=True, padding_mode='reflect'),
+                v2.RandomResizedCrop(size=max(config.img_h, config.img_w),
+                                     scale=(config.scale_min ** 2, config.scale_max ** 2),
+                                     ratio=(config.ratio_min, config.ratio_max), antialias=True),
                 v2.RandomHorizontalFlip(p=config.flip_p),
-                v2.ColorJitter(brightness=config.brightness, contrast=config.contrast,
-                               saturation=config.saturation, hue=config.hue),
+                v2.TrivialAugmentWide(),
                 v2.ToDtype(torch.float32, scale=True),
                 v2.Normalize(mean=config.imgs_mean, std=config.imgs_std),
             ])
