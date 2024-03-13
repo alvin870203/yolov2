@@ -287,6 +287,10 @@ class Yolov2(nn.Module):
                 noobj_conf_logits = logits_per_img[:, :, :, 4][noobj_box_logits_mask]  # size(n_noobj_box,)
                 loss_noobj += F.mse_loss(noobj_conf_logits, torch.zeros_like(noobj_conf_logits), reduction='sum')
 
+                # Debug msg
+                # print(f"\nNum of obj-box labels: {obj_targets_mask.sum()}, Num of obj-cell labels: {obj_targets_mask.any(dim=-1).sum()}")
+                # print(f"Num of matched obj-box: {matched_conf_logits.shape[0]}, Num of matched noobj-box: {noobj_conf_logits.shape[0]}\n")
+
         loss_noobj /= batch_size
         loss_obj /= batch_size
         loss_class /= batch_size
