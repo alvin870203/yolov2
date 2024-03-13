@@ -438,7 +438,7 @@ if __name__ == '__main__':
     targets = []
     n_grid_h, n_grid_w = config.img_h * 13 // 416, config.img_w * 13 // 416
     for _ in range(2 * n_grid_w * n_grid_h * config.n_box_per_cell):
-        targets.extend([random.uniform(0, 1), random.uniform(0, 1), random.uniform(0, 1), random.uniform(0, 1),
+        targets.extend([random.uniform(0, 1), random.uniform(0, 1), random.uniform(0, n_grid_w), random.uniform(0, n_grid_h),
                         random.randint(0, 1), random.randint(0, config.n_class - 1)])
     targets = torch.tensor(targets, dtype=torch.float32).view(2, n_grid_h, n_grid_w, config.n_box_per_cell, 6)
     logits, loss, _, _, _, _, _ = model(imgs, targets)
