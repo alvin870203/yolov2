@@ -9,6 +9,7 @@ https://github.com/AlexeyAB/darknet/blob/master/cfg/yolo-voc.2.0.cfg (old)
 https://github.com/longcw/yolo2-pytorch
 """
 
+from pprint import pprint
 import math
 import inspect
 from dataclasses import dataclass
@@ -200,35 +201,27 @@ class Yolov2(nn.Module):
         loss_wh = torch.tensor(0.0, dtype=dtype, device=device)
 
         # Iterate over images in the batch
-        for logits_per_img, targets_per_img in zip(logits, targets):
-            # logits_per_img: size(n_grid_h, n_grid_w, n_box_per_cell, (5 + n_class))
-            # targets_per_img: size(n_grid_h, n_grid_w, n_box_per_cell, 6)
+        for logits_per_img, targets_per_img in zip(logits, targets):  # size(n_grid_h, n_grid_w, n_box_per_cell, (5 + n_class)); size(n_grid_h, n_grid_w, n_box_per_cell, 6)
 
             obj_targets_mask = targets_per_img[:, :, :, 4] == 1.0  # size(n_grid_h, n_grid_w, n_box_per_cell)
-            # obj_targets_mask.sum() is n_obj_box; obj_targets_mask.any(dim=2).sum() is n_obj_cell
-            print(f"Num of obj cells: {obj_targets_mask.any(dim=2).sum()}, obj boxes: {obj_targets_mask.sum()}")
 
             if obj_targets_mask.sum() <= 0:  # no object in this image
                 conf_logits = logits_per_img[:, :, :, 4]  # size(n_grid_h, n_grid_w, n_box_per_cell)
                 loss_noobj += F.mse_loss(conf_logits, torch.zeros_like(conf_logits), reduction='sum')
             else:
                 # Cell locations of all obj boxes (may contain two same locations for two different boxes in the same cell)
-                obj_targets_idx_yxb = torch.argwhere(obj_targets_mask)  # size(n_obj_boxes, 3)
-                obj_targets_idx_y, obj_targets_idx_x, obj_targets_idx_b = torch.split(obj_targets_idx_yxb, 1, dim=-1)
-                # obj_targets_idx_y, obj_targets_idx_x, obj_targets_idx_b: size(n_obj_boxes, 1)
+                obj_targets_idx_yxb = torch.argwhere(obj_targets_mask)  # size(n_obj_box, 3)
+                obj_targets_idx_y, obj_targets_idx_x, _ = torch.split(obj_targets_idx_yxb, 1, dim=-1)  # size(n_obj_box, 1); size(n_obj_box, 1)
+                obj_targets_idx_y, obj_targets_idx_x = obj_targets_idx_y.squeeze(-1), obj_targets_idx_x.squeeze(-1)  # size(n_obj_box,); size(n_obj_box,)
 
                 # Compute responsible box
                 # TODO: improve by referencing https://github.com/ultralytics/ultralytics/blob/main/ultralytics/utils/tal.py
 
                 obj_targets = targets_per_img[obj_targets_mask]  # size(n_obj_box, 6)
-                obj_coord_targets, obj_conf_targets, obj_class_targets = torch.split(obj_targets, [4, 1, 1], dim=-1)
-                # obj_coord_targets: size(n_obj_box, 4); obj_conf_targets, obj_class_targets: size(n_obj_box, 1)
+                obj_coord_targets = obj_targets[:, :4]  # size(n_obj_box, 4)
 
-                obj_logits = logits_per_img[obj_targets_idx_y, obj_targets_idx_x].squeeze(1)  # size(n_obj_box, 5 + n_class)
-                obj_coord_logits, obj_conf_logits, obj_class_logits = torch.split(obj_logits, [4, 1, self.config.n_class], dim=-1)
-                # obj_coord_logits: size(n_obj_box, n_box_per_cell, 4)
-                # obj_conf_logits: size(n_obj_box, n_box_per_cell, 1)
-                # obj_class_logits: size(n_obj_box, n_box_per_cell, n_class)
+                obj_logits = logits_per_img[obj_targets_idx_y, obj_targets_idx_x]  # size(n_obj_box, n_box_per_cell, 5 + n_class)
+                obj_coord_logits = obj_logits[:, :, :4]  # size(n_obj_box, n_box_per_cell, 4)
 
                 # TODO: whether to clip_boxes_to_image, but then we need to calculate x1y1x2y2 relative to
                 #       the img top-left corner, i.e., consider c_x, c_y in the paper
@@ -245,39 +238,52 @@ class Yolov2(nn.Module):
                     obj_coord_targets[:, 1] + obj_coord_targets[:, 3] / 2,
                 ], dim=-1).unsqueeze(-2)  # size(n_obj_box, 1, 4)
 
-                match_iou_matrix, default_iou_matrix = self._batched_distance_box_iou(obj_x1y1x2y2_logits, obj_x1y1x2y2_targets)
-                # match_iou_matrix, default_iou_matrix: size(n_obj_box, n_box_per_cell, 1)
+                iou_matrix, default_iou_matrix = self._batched_distance_box_iou(obj_x1y1x2y2_logits, obj_x1y1x2y2_targets)  # size(n_obj_box, n_box_per_cell, 1); size(n_obj_box, n_box_per_cell, 1)
+                iou_matrix, default_iou_matrix = iou_matrix.squeeze(-1), default_iou_matrix.squeeze(-1)  # size(n_obj_box, n_box_per_cell); size(n_obj_box, n_box_per_cell)
 
-                # FIXME: if a box logit is assigned to multiple targets, the one with the highest IoU should be selected
-                sorted_iou, sorted_idx = match_iou_matrix.sort(dim=-2, descending=True)  # size(n_obj_box, n_box_per_cell, 1)
-                matched_idx = sorted_idx[:, 0]  # size(n_obj_box, 1)
+                # If a box logit is assigned to multiple targets, the one with the highest IoU should be selected
+                max_iou, max_logits_idx_b = iou_matrix.max(dim=-1)  # size(n_obj_box,); size(n_obj_box,)
+
+                sorted_iou, sorted_idx = max_iou.sort(dim=0, descending=True)  # size(n_obj_box,); size(n_obj_box,)
+                sorted_logits_idx_b = max_logits_idx_b[sorted_idx]  # size(n_obj_box,)
+                sorted_targets_idx_yxb = obj_targets_idx_yxb[sorted_idx]  # size(n_obj_box, 3)
+
+                _, matched_idx = np.unique(  # size(n_matched_obj_box,)
+                    torch.cat((sorted_targets_idx_yxb[:, :2], sorted_logits_idx_b.unsqueeze(-1)), dim=-1),
+                    return_index=True, axis=0)
+                matched_logits_idx_b = sorted_logits_idx_b[matched_idx]  # size(n_matched_obj_box,)
+                matched_targets_idx_yxb = sorted_targets_idx_yxb[matched_idx]  # size(n_matched_obj_box, 3)
+
+                matched_targets_idx_y = matched_targets_idx_yxb[:, 0]  # size(n_matched_obj_box,)
+                matched_targets_idx_x = matched_targets_idx_yxb[:, 1]  # size(n_matched_obj_box,)
+                matched_targets_idx_b = matched_targets_idx_yxb[:, 2]  # size(n_matched_obj_box,)
+
+                matched_logits = logits_per_img[matched_targets_idx_y, matched_targets_idx_x, matched_logits_idx_b]  # size(n_matched_obj_box, 5 + n_class)
+                matched_targets = targets_per_img[matched_targets_idx_y, matched_targets_idx_x, matched_targets_idx_b]  # size(n_matched_obj_box, 6)
 
                 # Compute responsible box (obj-box) confidence loss
-                matched_conf_logits = torch.take_along_dim(obj_conf_logits, matched_idx.unsqueeze(-1), dim=-2).squeeze(-2)
-                # matched_conf_logits: size(n_obj_box, 1)
+                matched_conf_logits = matched_logits[:, 4]  # size(n_matched_obj_box,)
                 loss_obj = F.mse_loss(matched_conf_logits, torch.ones_like(matched_conf_logits), reduction='sum')
 
                 # Compute responsible box (obj-box) class loss
-                matched_class_logits = torch.take_along_dim(obj_class_logits, matched_idx.unsqueeze(-1), dim=-2).squeeze(-2)
-                # matched_class_logits: size(n_obj_box, n_class)
-                loss_class += F.cross_entropy(matched_class_logits, obj_class_targets.squeeze(-1).to(torch.int64), reduction='sum')
+                matched_class_logits = matched_logits[:, 5:]  # size(n_matched_obj_box, n_class)
+                matched_class_targets = matched_targets[:, 5].to(torch.int64)  # size(n_matched_obj_box,)
+                loss_class += F.cross_entropy(matched_class_logits, matched_class_targets, reduction='sum')
 
                 # Compute responsible box (obj-box) x,y loss
-                matched_xy_logits = torch.take_along_dim(obj_coord_logits[:, :, :2], matched_idx.unsqueeze(-1), dim=-2).squeeze(-2)
-                # matched_xy_logits: size(n_obj_box, 2)
-                obj_xy_targets = obj_coord_targets[:, :2]  # size(n_obj_box, 2)
-                loss_xy += F.mse_loss(matched_xy_logits, obj_xy_targets, reduction='sum')
+                matched_xy_logits = matched_logits[:, :2]  # size(n_matched_obj_box, 2)
+                matched_xy_targets = matched_targets[:, :2]  # size(n_matched_obj_box, 2)
+                loss_xy += F.mse_loss(matched_xy_logits, matched_xy_targets, reduction='sum')
 
                 # Compute responsible box (obj-box) w,h loss
-                matched_wh_logits = torch.take_along_dim(obj_coord_logits[:, :, 2:], matched_idx.unsqueeze(-1), dim=-2).squeeze(-2)
-                # matched_wh_logits: size(n_obj_box, 2)
-                matched_anchors = torch.take_along_dim(anchors, matched_idx, dim=-2)  # size(n_obj_box, 2
-                obj_wh_targets = torch.log(obj_coord_targets[:, 2:] / matched_anchors)  # size(n_obj_box, 2)
-                loss_wh += F.mse_loss(matched_wh_logits, obj_wh_targets, reduction='sum')
+                matched_wh_logits = matched_logits[:, 2:4]  # size(n_matched_obj_box, 2)
+                matched_anchors = anchors[matched_logits_idx_b]  # size(n_matched_obj_box, 2)
+                matched_wh_targets = torch.log(matched_targets[:, 2:4] / matched_anchors)  # size(n_matched_obj_box, 2)
+                loss_wh += F.mse_loss(matched_wh_logits, matched_wh_targets, reduction='sum')
 
                 # Compute no-object-box (no-responsible box + no-object cell) confidence loss
                 noobj_box_logits_mask = torch.ones_like(logits_per_img[:, :, :, 4]).to(torch.bool)  # size(n_grid_h, n_grid_w, n_box_per_cell)
-                noobj_box_logits_mask[obj_targets_idx_y, obj_targets_idx_x, matched_idx.squeeze(-1)] = False
+                noobj_box_logits_mask[matched_targets_idx_y, matched_targets_idx_x, matched_logits_idx_b] = False
                 noobj_conf_logits = logits_per_img[:, :, :, 4][noobj_box_logits_mask]  # size(n_noobj_box,)
                 loss_noobj += F.mse_loss(noobj_conf_logits, torch.zeros_like(noobj_conf_logits), reduction='sum')
 
