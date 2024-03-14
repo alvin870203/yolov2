@@ -83,6 +83,7 @@ class Darknet19Backbone(nn.Module):
             x (Tensor): size(N, 3, img_h, img_w)
         Returns:
             x (Tensor): (N, 1024, img_h / 224 * 7, img_w / 224 * 7)
+            feat (Tensor): (N, 512, img_h / 224 * 14, img_w / 224 * 14)
         """
         # N x 3 x 224 (or 256 or 448) x 224 (or 256 or 448)
         x = self.conv1(x)
@@ -122,6 +123,7 @@ class Darknet19Backbone(nn.Module):
         x = self.conv12(x)
         # N x 256 x 14 (or 16 or 28) x 14 (or 16 or 28)
         x = self.conv13(x)
+        feat = x
         # N x 512 x 14 (or 16 or 28) x 14 (or 16 or 28)
         x = self.maxpool5(x)
         # N x 512 x 7 (or 8 or 14) x 7 (or 8 or 14)
@@ -137,7 +139,7 @@ class Darknet19Backbone(nn.Module):
         x = self.conv18(x)
         # N x 1024 x 7 (or 8 or 14) x 7 (or 8 or 14)
 
-        return x
+        return x, feat
 
 
 class Darknet19(nn.Module):
@@ -205,9 +207,9 @@ class Darknet19(nn.Module):
         """
         device = imgs.device
 
-        # Forward the Darknet16 model itself
+        # Forward the Darknet19 model itself
         # N x 3 x 224 (or 256 or 448) x 224 (or 256 or 448)
-        x = self.backbone(imgs)
+        x, feat = self.backbone(imgs)
         # N x 1024 x 7 (or 8 or 14) x 7 (or 8 or 14)
         logits = self.head(x)
         # N x n_class
@@ -275,7 +277,7 @@ class Darknet19(nn.Module):
         """
         Estimate the number of TOPS and parameters in the model.
         """
-        raise NotImplementedError("FUTURE: estimate TOPS for Extraction model")
+        raise NotImplementedError("FUTURE: estimate TOPS for Darknet19 model")
 
 
     @torch.inference_mode()
@@ -285,7 +287,7 @@ class Darknet19(nn.Module):
         """
         # Most likely you'll want to make sure to be in model.eval() mode of operation for this.
         self.eval()
-        raise NotImplementedError("FUTURE: generate for Extraction model")
+        raise NotImplementedError("FUTURE: generate for Darknet19 model")
         self.train()
 
 

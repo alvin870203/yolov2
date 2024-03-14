@@ -30,7 +30,7 @@ class Yolov2Config:
     img_h: int = 416
     img_w: int = 416
     n_class: int = 20
-    multiscale_min_sizes: Tuple[int, ...] = (320, 352, 384, 416, 448, 480, 512, 544, 576, 608)  # short edge
+    multiscale_min_sizes: Tuple[int, ...] = (320, 352, 384, 416, 448, 480, 512, 544, 576, 608)  # square edge
     anchors: Tuple[Tuple[int, int], ...] = ((1.08, 1.19), (3.42, 4.41), (6.63, 11.38), (9.42, 5.11), (16.62, 10.52))  # w,h relative to a cell
     n_box_per_cell: int = 5
     lambda_noobj: float = 0.5
