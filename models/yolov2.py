@@ -181,7 +181,9 @@ class Yolov2(nn.Module):
         return iou - (centers_distance_squared / diagonal_distance_squared), iou
 
 
-    def _compute_loss(self, logits: Tensor, targets: Tensor) -> Tensor:
+    def _compute_loss(self, logits: Tensor, targets: Tensor) -> Tensor:  # TODO: many improvements from AlexeyAB's darknet
+        # Debug test case:
+        # logits[:, :, :, :, :] = 0
         """
         Compute the cross entropy loss.
         Args:
@@ -223,13 +225,14 @@ class Yolov2(nn.Module):
                 obj_logits = logits_per_img[obj_targets_idx_y, obj_targets_idx_x]  # size(n_obj_box, n_box_per_cell, 5 + n_class)
                 obj_coord_logits = obj_logits[:, :, :4]  # size(n_obj_box, n_box_per_cell, 4)
 
+                # TODO: AlexeyAB's darknet implementation uses only wh to calculate iou and ignore cxcy difference
                 # TODO: whether to clip_boxes_to_image, but then we need to calculate x1y1x2y2 relative to
                 #       the img top-left corner, i.e., consider c_x, c_y in the paper
                 obj_x1y1x2y2_logits = torch.stack([  # relative to the top-left corner of the cell & normalized by the grid cell width,height
-                    obj_coord_logits[:, :, 0] - anchors[:, 0] * torch.exp(obj_coord_logits[:, :, 2] / 2),
-                    obj_coord_logits[:, :, 1] - anchors[:, 1] * torch.exp(obj_coord_logits[:, :, 3] / 2),
-                    obj_coord_logits[:, :, 0] + anchors[:, 0] * torch.exp(obj_coord_logits[:, :, 2] / 2),
-                    obj_coord_logits[:, :, 1] + anchors[:, 1] * torch.exp(obj_coord_logits[:, :, 3] / 2),
+                    obj_coord_logits[:, :, 0] - (anchors[:, 0] * torch.exp(obj_coord_logits[:, :, 2])) / 2,
+                    obj_coord_logits[:, :, 1] - (anchors[:, 1] * torch.exp(obj_coord_logits[:, :, 3])) / 2,
+                    obj_coord_logits[:, :, 0] + (anchors[:, 0] * torch.exp(obj_coord_logits[:, :, 2])) / 2,
+                    obj_coord_logits[:, :, 1] + (anchors[:, 1] * torch.exp(obj_coord_logits[:, :, 3])) / 2,
                 ], dim=-1)  # size(n_obj_box, n_box_per_cell, 4)
                 obj_x1y1x2y2_targets = torch.stack([  # relative to the top-left corner of the cell & normalized by the grid cell width,height
                     obj_coord_targets[:, 0] - obj_coord_targets[:, 2] / 2,
@@ -238,12 +241,16 @@ class Yolov2(nn.Module):
                     obj_coord_targets[:, 1] + obj_coord_targets[:, 3] / 2,
                 ], dim=-1).unsqueeze(-2)  # size(n_obj_box, 1, 4)
 
+                # Debug msg
+                # print(obj_x1y1x2y2_logits[0])
+                # print(obj_x1y1x2y2_targets)
+
                 iou_matrix, default_iou_matrix = self._batched_distance_box_iou(obj_x1y1x2y2_logits, obj_x1y1x2y2_targets)  # size(n_obj_box, n_box_per_cell, 1); size(n_obj_box, n_box_per_cell, 1)
                 iou_matrix, default_iou_matrix = iou_matrix.squeeze(-1), default_iou_matrix.squeeze(-1)  # size(n_obj_box, n_box_per_cell); size(n_obj_box, n_box_per_cell)
 
-                # If a box logit is assigned to multiple targets, the one with the highest IoU should be selected
                 max_iou, max_logits_idx_b = iou_matrix.max(dim=-1)  # size(n_obj_box,); size(n_obj_box,)
 
+                # If a box logit is assigned to multiple targets, the one with the highest IoU is selected
                 sorted_iou, sorted_idx = max_iou.sort(dim=0, descending=True)  # size(n_obj_box,); size(n_obj_box,)
                 sorted_logits_idx_b = max_logits_idx_b[sorted_idx]  # size(n_obj_box,)
                 sorted_targets_idx_yxb = obj_targets_idx_yxb[sorted_idx]  # size(n_obj_box, 3)
@@ -443,8 +450,18 @@ if __name__ == '__main__':
     n_grid_h, n_grid_w = config.img_h * 13 // 416, config.img_w * 13 // 416
     for _ in range(2 * n_grid_w * n_grid_h * config.n_box_per_cell):
         targets.extend([random.uniform(0, 1), random.uniform(0, 1), random.uniform(0, n_grid_w), random.uniform(0, n_grid_h),
-                        random.randint(0, 1), random.randint(0, config.n_class - 1)])
+                        0, random.randint(0, config.n_class - 1)])
     targets = torch.tensor(targets, dtype=torch.float32).view(2, n_grid_h, n_grid_w, config.n_box_per_cell, 6)
+    targets[0, 0, 0, 0, :4] = torch.tensor([0., 0., 1.08, 1.19])
+    targets[0, 0, 0, 0, 4] = 1.0
+    targets[0, 0, 0, 1, :4] = torch.tensor([0., 0., 1.08, 1.19])
+    targets[0, 0, 0, 1, 4] = 1.0
+    targets[0, 0, 0, 2, :4] = torch.tensor([0., 0., 1.08, 1.19])
+    targets[0, 0, 0, 2, 4] = 1.0
+    targets[0, 0, 0, 3, :4] = torch.tensor([0., 0., 9.42, 5.11])
+    targets[0, 0, 0, 3, 4] = 1.0
+    targets[0, 0, 0, 4, :4] = torch.tensor([0., 0., 16.62, 10.52])
+    targets[0, 0, 0, 4, 4] = 1.0
     logits, loss, _, _, _, _, _ = model(imgs, targets)
     # logits, loss, _, _, _, _, _ = model(imgs)
     print(f"logits shape: {logits.shape}")
