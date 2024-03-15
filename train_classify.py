@@ -18,7 +18,7 @@ from tqdm import tqdm
 # -----------------------------------------------------------------------------
 # Default config values
 # Task related
-task_name = 'detect'
+task_name = 'classify'
 eval_only = False  # if True, script exits right after the first eval
 init_from = 'scratch'  # 'scratch' or 'resume' or 'backbone' or 'pretrained'
 from_ckpt = ''  # only used when init_from='resume' or 'backbone' or 'pretrained'
