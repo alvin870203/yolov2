@@ -43,7 +43,7 @@ class Darknet19Conv2d(nn.Module):
 
 class Darknet19Backbone(nn.Module):
     """
-    Backbone of the Darknet19 model, i.e., first 18th conv layers of YOLOv1.
+    Backbone of the Darknet19 model.
     """
     def __init__(self, config: Darknet19Config) -> None:
         super().__init__()
