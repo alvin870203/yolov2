@@ -256,7 +256,7 @@ class Yolov2(nn.Module):
                 sorted_targets_idx_yxb = obj_targets_idx_yxb[sorted_idx]  # size(n_obj_box, 3)
 
                 _, matched_idx = np.unique(  # size(n_matched_obj_box,)
-                    torch.cat((sorted_targets_idx_yxb[:, :2], sorted_logits_idx_b.unsqueeze(-1)), dim=-1),
+                    torch.cat((sorted_targets_idx_yxb[:, :2], sorted_logits_idx_b.unsqueeze(-1)), dim=-1).cpu().numpy(),
                     return_index=True, axis=0)
                 matched_logits_idx_b = sorted_logits_idx_b[matched_idx]  # size(n_matched_obj_box,)
                 matched_targets_idx_yxb = sorted_targets_idx_yxb[matched_idx]  # size(n_matched_obj_box, 3)
@@ -433,7 +433,62 @@ class Yolov2(nn.Module):
         """
         Postprocess the logits and the targets for metrics calculation.
         """
-        raise NotImplementedError("TODO")
+        # Most likely you'll want to make sure to be in model.eval() mode of operation for this.
+        self.eval()
+        dtype, device = logits.dtype, logits.device
+        preds_for_eval, targets_for_eval = [], []
+        n_grid_h, n_grid_w = logits.shape[1:3]
+        img_h, img_w = round(n_grid_h / 13 * 416), round(n_grid_w / 13 * 416)
+        for logits_per_img, y_supp in zip(logits, Y_supp):
+            grid_y, grid_x, idx_box, idx_class= torch.meshgrid(torch.arange(n_grid_h, device=device),
+                                                               torch.arange(n_grid_w, device=device),
+                                                               torch.arange(self.config.n_box_per_cell, device=device),
+                                                               torch.arange(self.config.n_class, device=device),
+                                                               indexing='ij')
+            logits_class = logits_per_img[:, :, :, 5:]
+            prob_class = F.softmax(logits_class, dim=-1)
+
+            sigmoid_t_o = logits_per_img[grid_y, grid_x, idx_box, 4]
+            conf = sigmoid_t_o
+
+            prob = prob_class * conf
+            mask = (prob > self.config.prob_thresh) & (conf > 0.0)
+            grid_y = grid_y[mask]
+            grid_x = grid_x[mask]
+            idx_box = idx_box[mask]
+            idx_class = idx_class[mask]
+            prob = prob[mask]
+
+            anchors = torch.tensor(self.config.anchors, dtype=dtype, device=device)
+            anchors_w = anchors[idx_box, 0]
+            anchors_h = anchors[idx_box, 1]
+
+            sigmoid_t_x = logits_per_img[grid_y, grid_x, idx_box, 0]
+            sigmoid_t_y = logits_per_img[grid_y, grid_x, idx_box, 1]
+            t_w = logits_per_img[grid_y, grid_x, idx_box, 2]
+            t_h = logits_per_img[grid_y, grid_x, idx_box, 3]
+
+            cx = (sigmoid_t_x + grid_x) / n_grid_w * img_w
+            cy = (sigmoid_t_y + grid_y) / n_grid_h * img_h
+            w = torch.exp(t_w) * anchors_w / n_grid_w * img_w
+            h = torch.exp(t_h) * anchors_h / n_grid_h * img_h
+            coord = torch.stack((cx, cy, w, h), dim=-1)
+
+            boxes = clip_boxes_to_image(box_convert(coord, in_fmt='cxcywh', out_fmt='xyxy'),
+                                        size=(img_h, img_w))
+            scores = prob
+            classes = idx_class
+
+            boxes, scores = boxes.to(torch.float32), scores.to(torch.float32)
+            keep = batched_nms(boxes, scores, classes, self.config.nms_iou_thresh)  # don't work for BFloat16
+
+            boxes = boxes[keep]
+            scores = scores[keep]
+            classes = classes[keep]
+
+            preds_for_eval.append(dict(boxes=boxes, scores=scores, labels=classes))
+            targets_for_eval.append(dict(boxes=y_supp['boxes'].to(device), labels=y_supp['labels'].to(device)))
+        return preds_for_eval, targets_for_eval
 
 
 

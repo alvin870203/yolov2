@@ -9,7 +9,7 @@ import math
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.utils.data import ConcatDataset
+from torch.utils.data import ConcatDataset, Subset
 from torch.utils.data.dataloader import DataLoader
 import torchvision
 from torchvision import tv_tensors
@@ -67,7 +67,7 @@ class Resize(v2.Resize):
 class Voc2Yolov2(nn.Module):
     """
     x (Tensor): size(3, img_h, img_w), RGB, 0~255
-    y_yolov2 (Tensor): size(n_grid_h, n_grid_w, n_box_per_cell, 6)
+    y_yolov2 (Tensor): size(n_grid_h, n_grid_w, n_box_per_cell, 6)  # TODO: Only consider n_box_per_cell ?
         targets[j, k, l, 0:4] is is the box coordinates for the l-th box in the j,k-th grid cell, 0.0~1.0
             targets[j, k, l, 0:2] is the cx,cy relative to top-left corner of the j,k-th grid cell
                                and normalized by the grid cell width,height,
@@ -181,7 +181,8 @@ class VocCollateFn:
 
 
 class VocTrainDataLoader(DataLoader):
-    def __init__(self, config: VocConfig, data_dir, batch_size, num_workers, collate_fn, shuffle=True, pin_memory=True):
+    def __init__(self, config: VocConfig, data_dir, batch_size, num_workers, collate_fn, shuffle=True, pin_memory=True,
+                 nano=False):  # if True: use only the first two images as the entire dataset
         self.config = config
         self.fill = {tv_tensors.Image: config.fill, "others": 0}
         transforms = v2.Compose([
@@ -209,13 +210,16 @@ class VocTrainDataLoader(DataLoader):
                                                                   download=False, transforms=transforms)
         dataset_2012_trainval_v2 = wrap_dataset_for_transforms_v2(dataset_2012_trainval, target_keys=['boxes', 'labels'])
         dataset = ConcatDataset([dataset_2007_trainval_v2, dataset_2012_trainval_v2])
+        if nano:
+            dataset = Subset(dataset, indices=range(2))
         super().__init__(dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=collate_fn,
                          num_workers=num_workers, pin_memory=pin_memory)
 
 
 class VocValDataLoader(DataLoader):
     # Default shuffle=True since only eval partial data
-    def __init__(self, config: VocConfig, data_dir, batch_size, num_workers, collate_fn, shuffle=True, pin_memory=True):
+    def __init__(self, config: VocConfig, data_dir, batch_size, num_workers, collate_fn, shuffle=True, pin_memory=True,
+                 nano=False):  # if True: use only the first two images as the entire dataset
         self.config = config
         self.fill = {tv_tensors.Image: config.fill, "others": 0}
         transforms = v2.Compose([
@@ -229,6 +233,8 @@ class VocValDataLoader(DataLoader):
         dataset_2007_test = torchvision.datasets.VOCDetection(root=data_dir, year='2007', image_set='test',
                                                               download=False, transforms=transforms)
         dataset = wrap_dataset_for_transforms_v2(dataset_2007_test, target_keys=['boxes', 'labels'])
+        if nano:
+            dataset = Subset(dataset, indices=range(2))
         super().__init__(dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=collate_fn,
                          num_workers=num_workers, pin_memory=pin_memory)
 
@@ -247,7 +253,8 @@ class BlankVocConfig:
 
 class BlankVocTrainDataLoader(DataLoader):
     """All images are set to zeros. Used for setting input-independent baseline."""
-    def __init__(self, config: BlankVocConfig, data_dir, batch_size, num_workers, collate_fn, shuffle=True, pin_memory=True):
+    def __init__(self, config: BlankVocConfig, data_dir, batch_size, num_workers, collate_fn, shuffle=True, pin_memory=True,
+                 nano=False):  # if True: use only the first two images as the entire dataset
         self.config = config
         self.fill = {tv_tensors.Image: config.fill, "others": 0}
         transforms = v2.Compose([
@@ -269,6 +276,8 @@ class BlankVocTrainDataLoader(DataLoader):
                                                                   download=False, transforms=transforms)
         dataset_2012_trainval_v2 = wrap_dataset_for_transforms_v2(dataset_2012_trainval, target_keys=['boxes', 'labels'])
         dataset = ConcatDataset([dataset_2007_trainval_v2, dataset_2012_trainval_v2])
+        if nano:
+            dataset = Subset(dataset, indices=range(2))
         super().__init__(dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=collate_fn,
                          num_workers=num_workers, pin_memory=pin_memory)
 
@@ -276,7 +285,8 @@ class BlankVocTrainDataLoader(DataLoader):
 class BlankVocValDataLoader(DataLoader):
     """All images are set to zeros. Used for setting input-independent baseline."""
     # Default shuffle=True since only eval partial data
-    def __init__(self, config: VocConfig, data_dir, batch_size, num_workers, collate_fn, shuffle=True, pin_memory=True):
+    def __init__(self, config: VocConfig, data_dir, batch_size, num_workers, collate_fn, shuffle=True, pin_memory=True,
+                 nano=False):  # if True: use only the first two images as the entire dataset
         self.config = config
         self.fill = {tv_tensors.Image: config.fill, "others": 0}
         transforms = v2.Compose([
@@ -294,6 +304,8 @@ class BlankVocValDataLoader(DataLoader):
         dataset_2007_test = torchvision.datasets.VOCDetection(root=data_dir, year='2007', image_set='test',
                                                               download=False, transforms=transforms)
         dataset = wrap_dataset_for_transforms_v2(dataset_2007_test, target_keys=['boxes', 'labels'])
+        if nano:
+            dataset = Subset(dataset, indices=range(2))
         super().__init__(dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=collate_fn,
                          num_workers=num_workers, pin_memory=pin_memory)
 
