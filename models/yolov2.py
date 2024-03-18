@@ -233,7 +233,7 @@ class Yolov2(nn.Module):
                     obj_coord_logits[:, :, 1] - (anchors[:, 1] * torch.exp(obj_coord_logits[:, :, 3])) / 2,
                     obj_coord_logits[:, :, 0] + (anchors[:, 0] * torch.exp(obj_coord_logits[:, :, 2])) / 2,
                     obj_coord_logits[:, :, 1] + (anchors[:, 1] * torch.exp(obj_coord_logits[:, :, 3])) / 2,
-                ], dim=-1)  # size(n_obj_box, n_box_per_cell, 4)
+                ], dim=-1).detach()  # size(n_obj_box, n_box_per_cell, 4)  # detach to avoid backprop through matching
                 obj_x1y1x2y2_targets = torch.stack([  # relative to the top-left corner of the cell & normalized by the grid cell width,height
                     obj_coord_targets[:, 0] - obj_coord_targets[:, 2] / 2,
                     obj_coord_targets[:, 1] - obj_coord_targets[:, 3] / 2,
