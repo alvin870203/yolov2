@@ -43,6 +43,7 @@ img_w = 416
 n_class = 20
 # Transform related
 multiscale_min_sizes = (320, 352, 384, 416, 448, 480, 512, 544, 576, 608)  # square edge
+min_wh = 1e-3  # normalized by the grid cell width,height
 perspective = 0.015
 crop_scale = 0.8
 ratio_min = 0.5
@@ -134,6 +135,7 @@ if dataset_name == 'voc' or dataset_name == 'nano_voc':
         img_w=img_w,
         multiscale_min_sizes=multiscale_min_sizes,
         n_box_per_cell=n_box_per_cell,
+        min_wh=min_wh,
         perspective=perspective,
         crop_scale=crop_scale,
         ratio_min=ratio_min,
@@ -167,6 +169,7 @@ elif dataset_name == 'blank_voc' or dataset_name == 'nano_blank_voc':
         img_w=img_w,
         multiscale_min_sizes=multiscale_min_sizes,
         n_box_per_cell=n_box_per_cell,
+        min_wh=min_wh,
         letterbox=letterbox,
         imgs_mean=imgs_mean,
         imgs_std=imgs_std,
@@ -321,18 +324,18 @@ def estimate_loss():
     out_losses_noobj, out_losses_obj, out_losses_class, out_losses_xy, out_losses_wh = {}, {}, {}, {}, {}
     model.eval()
     for split in ['train', 'val']:
-        losses = torch.zeros(eval_iters * gradient_accumulation_steps)
-        losses_noobj = torch.zeros(eval_iters * gradient_accumulation_steps)
-        losses_obj = torch.zeros(eval_iters * gradient_accumulation_steps)
-        losses_class = torch.zeros(eval_iters * gradient_accumulation_steps)
-        losses_xy = torch.zeros(eval_iters * gradient_accumulation_steps)
-        losses_wh = torch.zeros(eval_iters * gradient_accumulation_steps)
+        losses = torch.zeros(int(eval_iters * gradient_accumulation_steps))
+        losses_noobj = torch.zeros(int(eval_iters * gradient_accumulation_steps))
+        losses_obj = torch.zeros(int(eval_iters * gradient_accumulation_steps))
+        losses_class = torch.zeros(int(eval_iters * gradient_accumulation_steps))
+        losses_xy = torch.zeros(int(eval_iters * gradient_accumulation_steps))
+        losses_wh = torch.zeros(int(eval_iters * gradient_accumulation_steps))
         if use_torchmetrics:
             metric = MeanAveragePrecision(iou_type='bbox')
             metric.warn_on_many_detections = False
         else:
             metric = DetEvaluator()
-        for k in range(eval_iters * gradient_accumulation_steps):
+        for k in range(int(eval_iters * gradient_accumulation_steps)):
             X, Y, Y_supp = BatchGetter.get_batch(split)
             with ctx:
                 logits, loss, loss_noobj, loss_obj, loss_class, loss_xy, loss_wh = model(X, Y)

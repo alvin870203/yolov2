@@ -17,6 +17,7 @@ n_class = 20
 # Transform related
 # No augmentation
 multiscale_min_sizes = (416,)
+min_wh = 1e-3
 perspective = 0.0
 crop_scale = 1.0
 ratio_min = 1.0

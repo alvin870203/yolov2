@@ -79,9 +79,10 @@ class Voc2Yolov2(nn.Module):
     y_voc['boxes'] (tv_tensors.BoundingBoxes): size(n_box=, 4), format='XYXY'
         y_voc['boxes'] is not normalized
     """
-    def __init__(self, n_box_per_cell):
+    def __init__(self, n_box_per_cell, min_wh):
         super().__init__()
         self.n_box_per_cell = n_box_per_cell
+        self.min_wh = min_wh  # normalized by the grid cell width,height
 
     # The following three functions are for cumcount
     # Ref: https://stackoverflow.com/questions/40602269/how-to-use-numpy-to-get-the-cumulative-count-by-unique-values-in-linear-time
@@ -115,6 +116,11 @@ class Voc2Yolov2(nn.Module):
         # Normalized the bounding boxes by the grid cell width,height
         boxes_yolov2[:, [0, 2]] *= n_grid_w
         boxes_yolov2[:, [1, 3]] *= n_grid_h
+        # Remove the bounding boxes with width or height less than min_wh to avoid numerical instability of log(0)
+        keep = (boxes_yolov2[:, 2] > self.min_wh) & (boxes_yolov2[:, 3] > self.min_wh)
+        boxes_yolov2 = boxes_yolov2[keep]
+        y_voc['boxes'] = y_voc['boxes'][keep]
+        y_voc['labels'] = y_voc['labels'][keep]
         # Randomly shuffle the bounding boxes and labels, since only n_box_per_cell object can be assigned to a grid cell
         idx = torch.randperm(len(boxes_yolov2))
         y_voc['boxes'] = y_voc['boxes'][idx]
@@ -144,6 +150,7 @@ class VocConfig:
     img_w: int = 416
     multiscale_min_sizes: Tuple[int, ...] = (320, 352, 384, 416, 448, 480, 512, 544, 576, 608)  # square edge
     n_box_per_cell: int = 5
+    min_wh: float = 1e-3  # normalized by the grid cell width,height
     perspective: float = 0.015
     crop_scale: float = 0.8
     ratio_min: float = 0.5
@@ -168,7 +175,7 @@ class VocCollateFn:
         self.multiscale = multiscale
         self.config = config
         self.batched_multi_scale_transform = v2.RandomShortestSize(min_size=config.multiscale_min_sizes, antialias=True)
-        self.voc2yolov2_transform = Voc2Yolov2(n_box_per_cell=config.n_box_per_cell)
+        self.voc2yolov2_transform = Voc2Yolov2(n_box_per_cell=config.n_box_per_cell, min_wh=config.min_wh)
 
     def __call__(self, batch):
         xs, ys, y_supps = [], [], []
@@ -250,6 +257,7 @@ class BlankVocConfig:
     img_w: int = 224
     multiscale_min_sizes: Tuple[int, ...] = (320, 352, 384, 416, 448, 480, 512, 544, 576, 608)  # square edge
     n_box_per_cell: int = 5
+    min_wh: float = 1e-3  # normalized by the grid cell width,height
     letterbox: bool = True
     imgs_mean: Tuple = (0.485, 0.456, 0.406)
     imgs_std: Tuple = (0.229, 0.224, 0.225)

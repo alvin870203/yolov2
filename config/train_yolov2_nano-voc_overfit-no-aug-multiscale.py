@@ -16,6 +16,7 @@ n_class = 20
 # Transform related
 # No augmentation, only multiscale
 multiscale_min_sizes = (320, 352, 384, 416, 448, 480, 512, 544, 576, 608)
+min_wh = 1e-3
 perspective = 0.0
 crop_scale = 1.0
 ratio_min = 1.0
@@ -47,9 +48,9 @@ lambda_coord = 5.0
 
 # Train related
 # the number of examples per iter:
-# 2 batch_size * 10 grad_accum = 20 imgs/iter
-# nano voc train set has 2 imgs, so 1 epoch ~= 0.1 iters
-gradient_accumulation_steps = 10  # to get stable grad update, there are 10 multiscale sizes
+# 2 batch_size * 1 grad_accum = 2 imgs/iter
+# nano voc train set has 2 imgs, so 1 epoch ~= 1 iters
+gradient_accumulation_steps = 1
 batch_size = 2  # entire dataset
 max_iters = 16000
 
