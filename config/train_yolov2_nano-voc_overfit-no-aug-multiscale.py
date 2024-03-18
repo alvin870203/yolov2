@@ -47,15 +47,15 @@ lambda_coord = 5.0
 
 # Train related
 # the number of examples per iter:
-# 2 batch_size * 1 grad_accum = 2 imgs/iter
-# nano voc train set has 2 imgs, so 1 epoch ~= 1 iters
-gradient_accumulation_steps = 1
+# 2 batch_size * 10 grad_accum = 20 imgs/iter
+# nano voc train set has 2 imgs, so 1 epoch ~= 0.1 iters
+gradient_accumulation_steps = 10  # to get stable grad update, there are 10 multiscale sizes
 batch_size = 2  # entire dataset
 max_iters = 16000
 
 # Optimizer related
 optimizer_type = 'adamw'
-learning_rate = 1e-4  # nano lr to overfit nano dataset stably
+learning_rate = 1e-5  # nano lr to overfit nano dataset stably
 beta1 = 0.9
 beta2 = 0.999
 weight_decay = 5e-4
