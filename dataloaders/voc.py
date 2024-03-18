@@ -121,19 +121,20 @@ class Voc2Yolov2(nn.Module):
         boxes_yolov2 = boxes_yolov2[idx]
         y_voc['labels'] = y_voc['labels'][idx] - 1  # remove background class
         y_yolov2 = torch.zeros((n_grid_h, n_grid_w, self.n_box_per_cell, 6), dtype=torch.float32)
-        cx_yolov2, cy_yolov2, w_yolov2, h_yolov2 = torch.unbind(boxes_yolov2, dim=1)
-        grid_x = torch.clamp_max(torch.floor(cx_yolov2), (n_grid_w - 1)).to(torch.int64)
-        grid_y = torch.clamp_max(torch.floor(cy_yolov2), (n_grid_h - 1)).to(torch.int64)
-        _, obj_grid_idx = torch.unique(torch.stack((grid_x, grid_y)), return_inverse=True, dim=1)
-        grid_idx_box = self._cumcount(obj_grid_idx.numpy())
-        grid_idx_box = np.minimum(grid_idx_box, (self.n_box_per_cell - 1))
-        y_yolov2[grid_y, grid_x, grid_idx_box, 4] = 1.0  # set the is_obj to 1.0
-        y_yolov2[grid_y, grid_x, grid_idx_box, 5] = y_voc['labels'].to(torch.float32)  # set the class index to label
-        # Set the box coordinates, all normalized by the grid size
-        y_yolov2[grid_y, grid_x, grid_idx_box, 0] = cx_yolov2 - grid_x
-        y_yolov2[grid_y, grid_x, grid_idx_box, 1] = cy_yolov2 - grid_y
-        y_yolov2[grid_y, grid_x, grid_idx_box, 2] = w_yolov2
-        y_yolov2[grid_y, grid_x, grid_idx_box, 3] = h_yolov2
+        if boxes_yolov2.numel() > 0:
+            cx_yolov2, cy_yolov2, w_yolov2, h_yolov2 = torch.unbind(boxes_yolov2, dim=1)
+            grid_x = torch.clamp_max(torch.floor(cx_yolov2), (n_grid_w - 1)).to(torch.int64)
+            grid_y = torch.clamp_max(torch.floor(cy_yolov2), (n_grid_h - 1)).to(torch.int64)
+            _, obj_grid_idx = torch.unique(torch.stack((grid_x, grid_y)), return_inverse=True, dim=1)
+            grid_idx_box = self._cumcount(obj_grid_idx.numpy())
+            grid_idx_box = np.minimum(grid_idx_box, (self.n_box_per_cell - 1))
+            y_yolov2[grid_y, grid_x, grid_idx_box, 4] = 1.0  # set the is_obj to 1.0
+            y_yolov2[grid_y, grid_x, grid_idx_box, 5] = y_voc['labels'].to(torch.float32)  # set the class index to label
+            # Set the box coordinates, all normalized by the grid size
+            y_yolov2[grid_y, grid_x, grid_idx_box, 0] = cx_yolov2 - grid_x
+            y_yolov2[grid_y, grid_x, grid_idx_box, 1] = cy_yolov2 - grid_y
+            y_yolov2[grid_y, grid_x, grid_idx_box, 2] = w_yolov2
+            y_yolov2[grid_y, grid_x, grid_idx_box, 3] = h_yolov2
         return x, y_yolov2, y_voc
 
 
