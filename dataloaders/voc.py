@@ -167,16 +167,22 @@ class VocCollateFn:
         self.multiscale = multiscale
         self.config = config
         self.batched_multi_scale_transform = v2.RandomShortestSize(min_size=config.multiscale_min_sizes, antialias=True)
+        self.voc2yolov2_transform = Voc2Yolov2(n_box_per_cell=config.n_box_per_cell)
 
     def __call__(self, batch):
         xs, ys, y_supps = [], [], []
-        for x, y, y_supp in batch:
+        for x, y_supp in batch:
             xs.append(x)
-            ys.append(y)
             y_supps.append(y_supp)
-        xs, ys = torch.stack(xs), torch.stack(ys)
         if self.multiscale:
-            xs, ys = self.batched_multi_scale_transform(xs, ys)
+            xs, y_supps = self.batched_multi_scale_transform(xs, y_supps)
+        for idx_img, (x, y_supp) in enumerate(zip(xs, y_supps)):
+            x, y, y_supp = self.voc2yolov2_transform(x, y_supp)
+            xs[idx_img] = x
+            ys.append(y)
+            y_supps[idx_img] = y_supp
+        xs = torch.stack(xs)
+        ys = torch.stack(ys)
         return xs, ys, y_supps
 
 
@@ -201,7 +207,6 @@ class VocTrainDataLoader(DataLoader):
             v2.SanitizeBoundingBoxes(),
             v2.ToDtype(torch.float32, scale=True),
             v2.Normalize(mean=config.imgs_mean, std=config.imgs_std),
-            Voc2Yolov2(n_box_per_cell=config.n_box_per_cell),
         ])
         dataset_2007_trainval = torchvision.datasets.VOCDetection(root=data_dir, year='2007', image_set='trainval',
                                                                download=False, transforms=transforms)
@@ -228,7 +233,6 @@ class VocValDataLoader(DataLoader):
             v2.SanitizeBoundingBoxes(),
             v2.ToDtype(torch.float32, scale=True),
             v2.Normalize(mean=config.imgs_mean, std=config.imgs_std),
-            Voc2Yolov2(n_box_per_cell=config.n_box_per_cell),
         ])
         dataset_2007_test = torchvision.datasets.VOCDetection(root=data_dir, year='2007', image_set='test',
                                                               download=False, transforms=transforms)
@@ -267,7 +271,6 @@ class BlankVocTrainDataLoader(DataLoader):
             Resize(size=(config.img_h, config.img_w), letterbox=config.letterbox, fill=self.fill, antialias=True),
             v2.ToDtype(torch.float32, scale=True),
             v2.Normalize(mean=config.imgs_mean, std=config.imgs_std),
-            Voc2Yolov2(n_box_per_cell=config.n_box_per_cell),
         ])
         dataset_2007_trainval = torchvision.datasets.VOCDetection(root=data_dir, year='2007', image_set='trainval',
                                                                   download=False, transforms=transforms)
@@ -299,7 +302,6 @@ class BlankVocValDataLoader(DataLoader):
             Resize(size=(config.img_h, config.img_w), letterbox=config.letterbox, fill=self.fill, antialias=True),
             v2.ToDtype(torch.float32, scale=True),
             v2.Normalize(mean=config.imgs_mean, std=config.imgs_std),
-            Voc2Yolov2(n_box_per_cell=config.n_box_per_cell),
         ])
         dataset_2007_test = torchvision.datasets.VOCDetection(root=data_dir, year='2007', image_set='test',
                                                               download=False, transforms=transforms)
