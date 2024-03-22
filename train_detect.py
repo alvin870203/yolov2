@@ -86,7 +86,7 @@ weight_decay = 1e-2
 grad_clip = 0.0  # clip gradients at this value, or disable if == 0.0
 decay_lr = 'cosine'  # whether to decay the learning rate, which type of lr scheduler. False, 'cosine', 'step'
 warmup_iters = 5000  # how many steps to warm up for
-lr_decay_iters = 100000  # should be ~= max_iters; this is step_size if decay_lr='step'
+lr_decay_iters = 100000  # should be ~= max_iters; this is milestones if decay_lr='step'
 min_lr = 1e-4  # minimum learning rate, should be ~= learning_rate/10; this is gamma if decay_lr='step'
 use_fused = True  # whether to use fused optimizer kernel
 # Eval related
@@ -389,7 +389,8 @@ elif decay_lr == 'step':
         if it < warmup_iters:
             return learning_rate * it / warmup_iters
         # 2) After warmup, use step decay with min_lr as gamma
-        return learning_rate * (min_lr ** ((it - warmup_iters) // lr_decay_iters))
+        # lr_decay_iters is a tuple of milestones
+        return learning_rate * (min_lr ** sum(it >= milestone for milestone in lr_decay_iters))
 elif decay_lr == False:
     pass
 else:
