@@ -108,7 +108,7 @@ class Yolov2(nn.Module):
         self.head = Yolov2Head(config)
 
         # Init all weights
-        self.apply(self._init_weights)  # TODO: is this beneficial? see ultralytics/utils/torch_utils.py#L340
+        self.apply(self._init_weights)
 
         # Report number of parameters
         print("number of parameters: %.2fM" % (self.get_num_params()/1e6,))
@@ -124,9 +124,11 @@ class Yolov2(nn.Module):
 
     def _init_weights(self, module):
         if isinstance(module, nn.Conv2d):
-            torch.nn.init.kaiming_normal_(module.weight, mode='fan_out', nonlinearity='leaky_relu')
-            if module.bias is not None:
-                torch.nn.init.zeros_(module.bias)
+            # Disabling this init as ultralytics does gives faster startup convergence
+            # torch.nn.init.kaiming_normal_(module.weight, mode='fan_out', nonlinearity='leaky_relu')
+            # if module.bias is not None:
+            #     torch.nn.init.zeros_(module.bias)
+            pass  # pytorch default uses kaiming_uniform_ for weight and zeros_ for bias
         elif isinstance(module, nn.BatchNorm2d):
             torch.nn.init.ones_(module.weight)
             torch.nn.init.zeros_(module.bias)
