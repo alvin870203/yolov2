@@ -70,6 +70,9 @@ lambda_noobj = 0.5
 lambda_obj = 1.0
 lambda_class = 1.0
 lambda_coord = 5.0
+lambda_burnin = 0.01
+anchors_burnin_n_seen_img = 12800  # the number of seen imgs to burn anchors cx,cy,w,h into target
+noobj_iou_thresh = 0.6  # if best iou of a predicted box with any target is less than this, it's a noobj
 # Train related
 gradient_accumulation_steps = 1  # used to simulate larger batch sizes
 batch_size = 2  # if gradient_accumulation_steps > 1, this is the micro-batch size
@@ -228,6 +231,7 @@ elif init_from == 'resume':
     checkpoint_model_args = checkpoint['model_args']
     assert model_name == checkpoint['config']['model_name'], "model_name mismatch"
     assert dataset_name == checkpoint['config']['dataset_name'], "dataset_name mismatch"
+    iter_num = checkpoint['iter_num']
 elif init_from == 'backbone':
     print(f"Initializing a {model_name} model with pretrained backbone weights: {from_ckpt}")
     # Init a new model with pretrained backbone weights
@@ -252,6 +256,9 @@ if model_name == 'yolov2':
         lambda_obj=lambda_obj,
         lambda_class=lambda_class,
         lambda_coord=lambda_coord,
+        lambda_burnin=lambda_burnin,
+        anchors_burnin_n_seen_img=anchors_burnin_n_seen_img,
+        noobj_iou_thresh=noobj_iou_thresh,
         prob_thresh=prob_thresh,
         nms_iou_thresh=nms_iou_thresh,
     )  # start with model_args from command line
@@ -262,7 +269,7 @@ if model_name == 'yolov2':
             model_args[k] = checkpoint_model_args[k]
     # Create the model
     model_config = Yolov2Config(**model_args)
-    model = Yolov2(model_config)
+    model = Yolov2(model_config, n_seen_img=iter_num * imgs_per_iter)
 else:
     raise ValueError(f"model_name: {model_name} not supported")
 
@@ -275,7 +282,6 @@ if init_from == 'resume':
         if k.startswith(unwanted_prefix):
             state_dict[k[len(unwanted_prefix):]] = state_dict.pop(k)
     model.load_state_dict(state_dict)
-    iter_num = checkpoint['iter_num']
     best_val_loss = checkpoint['best_val_loss']
 elif init_from == 'backbone':
     state_dict = checkpoint['model']
@@ -321,10 +327,11 @@ if compile:
 @torch.inference_mode()
 def estimate_loss():
     out_losses, out_map50 = {}, {}
-    out_losses_noobj, out_losses_obj, out_losses_class, out_losses_xy, out_losses_wh = {}, {}, {}, {}, {}
+    out_losses_burnin, out_losses_noobj, out_losses_obj, out_losses_class, out_losses_xy, out_losses_wh = {}, {}, {}, {}, {}, {}
     model.eval()
     for split in ['train', 'val']:
         losses = torch.zeros(int(eval_iters * gradient_accumulation_steps))
+        losses_burnin = torch.zeros(int(eval_iters * gradient_accumulation_steps))
         losses_noobj = torch.zeros(int(eval_iters * gradient_accumulation_steps))
         losses_obj = torch.zeros(int(eval_iters * gradient_accumulation_steps))
         losses_class = torch.zeros(int(eval_iters * gradient_accumulation_steps))
@@ -338,8 +345,9 @@ def estimate_loss():
         for k in range(int(eval_iters * gradient_accumulation_steps)):
             X, Y, Y_supp = BatchGetter.get_batch(split)
             with ctx:
-                logits, loss, loss_noobj, loss_obj, loss_class, loss_xy, loss_wh = model(X, Y)
+                logits, loss, loss_burnin, loss_noobj, loss_obj, loss_class, loss_xy, loss_wh = model(X, Y)
             losses[k] = loss.item()
+            losses_burnin[k] = loss_burnin.item()
             losses_noobj[k] = loss_noobj.item()
             losses_obj[k] = loss_obj.item()
             losses_class[k] = loss_class.item()
@@ -350,6 +358,7 @@ def estimate_loss():
         map50 = metric.compute()['map_50'] * 100
         map50 = map50.item() if isinstance(map50, torch.Tensor) else map50
         out_losses[split] = losses.mean()
+        out_losses_burnin[split] = losses_burnin.mean()
         out_losses_noobj[split] = losses_noobj.mean()
         out_losses_obj[split] = losses_obj.mean()
         out_losses_class[split] = losses_class.mean()
@@ -357,7 +366,7 @@ def estimate_loss():
         out_losses_wh[split] = losses_wh.mean()
         out_map50[split] = map50
     model.train()
-    return out_losses, out_losses_noobj, out_losses_obj, out_losses_class, out_losses_xy, out_losses_wh, out_map50
+    return out_losses, out_losses_burnin, out_losses_noobj, out_losses_obj, out_losses_class, out_losses_xy, out_losses_wh, out_map50
 
 
 # Learning rate decay scheduler (cosine with warmup)
@@ -408,12 +417,13 @@ while True:
 
     # Evaluate the loss on train/val sets and write checkpoints
     if iter_num % eval_interval == 0:
-        losses, losses_noobj, losses_obj, losses_class, losses_xy, losses_wh, map50 = estimate_loss()
+        losses, losses_burnin, losses_noobj, losses_obj, losses_class, losses_xy, losses_wh, map50 = estimate_loss()
         tqdm.write(f"step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}, val map50 {map50['val']:.4f}")
         if wandb_log:
             wandb.log({
                 "iter": iter_num,
                 "train/loss": losses['train'],
+                "train/loss_burnin": losses_burnin['train'],
                 "train/loss_noobj": losses_noobj['train'],
                 "train/loss_obj": losses_obj['train'],
                 "train/loss_class": losses_class['train'],
@@ -421,6 +431,7 @@ while True:
                 "train/loss_wh": losses_wh['train'],
                 "train/map50": map50['train'],
                 "val/loss": losses['val'],
+                "val/loss_burnin": losses_burnin['val'],
                 "val/loss_noobj": losses_noobj['val'],
                 "val/loss_obj": losses_obj['val'],
                 "val/loss_class": losses_class['val'],
@@ -457,7 +468,7 @@ while True:
     # and using the GradScaler if data type is float16
     for micro_step in range(gradient_accumulation_steps):
         with ctx:
-            logits, loss, _, _, _, _, _ = model(X, Y)
+            logits, loss, _, _, _, _, _, _ = model(X, Y)
             loss = loss / gradient_accumulation_steps # scale the loss to account for gradient accumulation
 
         # Immediately async prefetch next batch while model is doing the forward pass on the GPU

@@ -170,7 +170,7 @@ class VocConfig:
     fill: Tuple = (123.0, 117.0, 104.0)
 
 
-class VocCollateFn:
+class VocCollateFn:  # TODO: change multiscale size every 10 iters or so, not only every iter
     def __init__(self, multiscale: bool, config: VocConfig):
         self.multiscale = multiscale
         self.config = config

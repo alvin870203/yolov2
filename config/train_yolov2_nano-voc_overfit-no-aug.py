@@ -45,6 +45,9 @@ lambda_noobj = 0.5
 lambda_obj = 1.0
 lambda_class = 1.0
 lambda_coord = 5.0
+lambda_burnin = 0.01
+anchors_burnin_n_seen_img = 20
+noobj_iou_thresh = 0.6
 
 # Train related
 # the number of examples per iter:
