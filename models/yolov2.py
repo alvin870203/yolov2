@@ -48,7 +48,7 @@ class Yolov2Config:
     # match_iou_type: str = 'default'  # 'default' or 'distance'
     noobj_iou_thresh: float = 0.6  # if best iou of a predicted box with any target is less than this, it's a noobj,
                                    # (i.e., thresh in darknet cfg)
-    # rescore: bool = False  # whether to take the predicted iou as the target for the confidence score instead of 1.0
+    rescore: bool = False  # whether to take the predicted iou as the target for the confidence score instead of 1.0
     # softmax_class: bool = False  # whether to use softmax for class prediction instead of mean squared error
 
 
@@ -61,9 +61,10 @@ class Yolov2Head(nn.Module):
         self.config = config
         self.conv1 = Darknet19Conv2d(1024, 1024, kernel_size=3, stride=1, padding=1)
         self.conv2 = Darknet19Conv2d(1024, 1024, kernel_size=3, stride=1, padding=1)
+        self.conv3 = Darknet19Conv2d(512, 64, kernel_size=1, stride=1, padding=0)
         self.unfold = nn.Unfold(kernel_size=2, stride=2, padding=0)
-        self.conv3 = Darknet19Conv2d(1024 + 2 * 1024, 1024, kernel_size=3, stride=1, padding=1)
-        self.conv4 = nn.Conv2d(1024, config.n_box_per_cell * (5 + config.n_class),  # out_channels is 125 by default
+        self.conv4 = Darknet19Conv2d(1024 + 4 * 64, 1024, kernel_size=3, stride=1, padding=1)
+        self.conv5 = nn.Conv2d(1024, config.n_box_per_cell * (5 + config.n_class),  # out_channels is 125 by default
                                kernel_size=1, stride=1, padding=0, bias=True)
 
 
@@ -82,15 +83,16 @@ class Yolov2Head(nn.Module):
         # N x 1024 x 13 (or 10~19 for img_h 320~608) x 13 (or 10~19 for img_h 320~608)
 
         # N x 512 x 26 (or 20~38 for img_h 320~608) x 26 (or 20~38 for img_h 320~608)
-        # TODO: whether to add a conv as darknet cfg
-        feat = self.unfold(feat).reshape(feat.shape[0], 2048, *x.shape[-2:])
-        # N x 2048 x 13 (or 10~19 for img_h 320~608) x 13 (or 10~19 for img_h 320~608)
+        feat = self.conv3(feat)  # TODO: add a conv as darknet cfg
+        # N x 64 x 26 (or 20~38 for img_h 320~608) x 26 (or 20~38 for img_h 320~608)
+        feat = self.unfold(feat).reshape(feat.shape[0], 256, *x.shape[-2:])
+        # N x 256 x 13 (or 10~19 for img_h 320~608) x 13 (or 10~19 for img_h 320~608)
 
         x = torch.cat([x, feat], dim=1)
-        # N x 3072 x 13 (or 10~19 for img_h 320~608) x 13 (or 10~19 for img_h 320~608)
-        x = self.conv3(x)
+        # N x 1280 x 13 (or 10~19 for img_h 320~608) x 13 (or 10~19 for img_h 320~608)
+        x = self.conv4(x)
         # N x 1024 x 13 (or 10~19 for img_h 320~608) x 13 (or 10~19 for img_h 320~608)
-        logits = self.conv4(x)
+        logits = self.conv5(x)
         # N x 125 x 13 (or 10~19 for img_h 320~608) x 13 (or 10~19 for img_h 320~608)
         logits = logits.permute(0, 2, 3, 1)
         # N x n_grid_h x n_grid_w x n_box_per_cell * (5 + n_class)
@@ -285,6 +287,34 @@ class Yolov2(nn.Module):
             matched_logits_idx_x = matched_targets_idx_x = sorted_targets_idx_x[matched_idx]  # size(n_matched_box,)
             matched_targets_idx_box = sorted_targets_idx_box[matched_idx]  # size(n_matched_box,)
 
+            # Calculate IoU btw each pair of matched logit and target for rescore
+            if self.config.rescore:
+                # Coord of matched logits
+                matched_logits = logits_per_img[
+                    matched_logits_idx_y, matched_logits_idx_x, matched_logits_idx_box
+                ].detach()  # size(n_matched_box, 5 + n_class)  # detach to avoid backprop through matching
+                matched_x1y1x2y2_logits = torch.stack([  # relative to the top-left corner of the img & normalized by the grid cell w,h
+                    matched_logits[:, 0] - (anchors[matched_logits_idx_box, 0] * torch.exp(matched_logits[:, 2])) / 2,
+                    matched_logits[:, 1] - (anchors[matched_logits_idx_box, 1] * torch.exp(matched_logits[:, 3])) / 2,
+                    matched_logits[:, 0] + (anchors[matched_logits_idx_box, 0] * torch.exp(matched_logits[:, 2])) / 2,
+                    matched_logits[:, 1] + (anchors[matched_logits_idx_box, 1] * torch.exp(matched_logits[:, 3])) / 2,
+                ], dim=-1).unsqueeze(-2)  # size(n_matched_box, 1, 4)
+
+                # Coord of matched targets
+                matched_targets = targets_per_img[
+                    matched_targets_idx_y, matched_targets_idx_x, matched_targets_idx_box
+                ]  # size(n_matched_box, 6)
+                matched_x1y1x2y2_targets = torch.stack([  # relative to the top-left corner of the img & normalized by the grid cell w,h
+                    matched_targets[:, 0] - matched_targets[:, 2] / 2,
+                    matched_targets[:, 1] - matched_targets[:, 3] / 2,
+                    matched_targets[:, 0] + matched_targets[:, 2] / 2,
+                    matched_targets[:, 1] + matched_targets[:, 3] / 2,
+                ], dim=-1).unsqueeze(-2)  # size(n_matched_box, 1, 4)
+
+                # Compute IoU
+                matched_iou_matrix = self._batched_box_iou(matched_x1y1x2y2_logits, matched_x1y1x2y2_targets)  # size(n_matched_box, 1, 1)
+                matched_iou_matrix = matched_iou_matrix.squeeze(-1).squeeze(-1)  # size(n_matched_box,)
+
             # Idxs of unmatched logits
             unmatched_logits_mask = torch.ones_like(logits_per_img[:, :, :, 4]).to(torch.bool)  # size(n_grid_h, n_grid_w, n_box_per_cell)
             unmatched_logits_mask[matched_logits_idx_y, matched_logits_idx_x, matched_logits_idx_box] = False
@@ -335,7 +365,10 @@ class Yolov2(nn.Module):
 
             # Compute matched-box confidence loss
             matched_conf_logits = logits_per_img[matched_logits_idx_y, matched_logits_idx_x, matched_logits_idx_box, 4]  # size(n_matched_box,)
-            loss_obj += F.mse_loss(matched_conf_logits, torch.ones_like(matched_conf_logits), reduction='sum')
+            if self.config.rescore:
+                loss_obj += F.mse_loss(matched_conf_logits, matched_iou_matrix, reduction='sum')
+            else:
+                loss_obj += F.mse_loss(matched_conf_logits, torch.ones_like(matched_conf_logits), reduction='sum')
 
             # Compute matched-box class loss
             matched_class_logits = logits_per_img[matched_logits_idx_y, matched_logits_idx_x, matched_logits_idx_box, 5:]  # size(n_matched_box, n_class)

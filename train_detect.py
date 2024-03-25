@@ -75,6 +75,7 @@ lambda_burnin = 0.01
 anchors_burnin_n_seen_img = 12800  # the number of seen imgs to burn anchors cx,cy,w,h into target
 noobj_iou_thresh = 0.6  # if best iou of a predicted box with any target is less than this, it's a noobj
 match_by_anchors = True  # whether to take anchors as predicted w,h when matching predicts to targets
+rescore = False  # whether to take the predicted iou as the target for the confidence score instead of 1.0
 # Train related
 gradient_accumulation_steps = 1  # used to simulate larger batch sizes
 batch_size = 2  # if gradient_accumulation_steps > 1, this is the micro-batch size
@@ -263,6 +264,7 @@ if model_name == 'yolov2':
         anchors_burnin_n_seen_img=anchors_burnin_n_seen_img,
         noobj_iou_thresh=noobj_iou_thresh,
         match_by_anchors=match_by_anchors,
+        rescore=rescore,
         prob_thresh=prob_thresh,
         nms_iou_thresh=nms_iou_thresh,
     )  # start with model_args from command line

@@ -49,6 +49,7 @@ lambda_burnin = 0.01
 anchors_burnin_n_seen_img = 20
 noobj_iou_thresh = 0.6
 match_by_anchors = True
+rescore = False
 
 # Train related
 # the number of examples per iter:
