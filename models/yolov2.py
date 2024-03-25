@@ -48,7 +48,7 @@ class Yolov2Config:
     # match_iou_type: str = 'default'  # 'default' or 'distance'
     noobj_iou_thresh: float = 0.6  # if best iou of a predicted box with any target is less than this, it's a noobj,
                                    # (i.e., thresh in darknet cfg)
-    rescore: bool = False  # whether to take the predicted iou as the target for the confidence score instead of 1.0
+    rescore: bool = True  # whether to take the predicted iou as the target for the confidence score instead of 1.0
     # softmax_class: bool = False  # whether to use softmax for class prediction instead of mean squared error
 
 
