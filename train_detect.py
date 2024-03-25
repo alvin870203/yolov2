@@ -17,6 +17,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import ConcatDataset
 from torch.utils.data.dataloader import DataLoader
+import torch.multiprocessing
 import torchvision
 from torchvision import tv_tensors
 from torchvision.transforms import v2
@@ -73,6 +74,7 @@ lambda_coord = 5.0
 lambda_burnin = 0.01
 anchors_burnin_n_seen_img = 12800  # the number of seen imgs to burn anchors cx,cy,w,h into target
 noobj_iou_thresh = 0.6  # if best iou of a predicted box with any target is less than this, it's a noobj
+match_by_anchors = True  # whether to take anchors as predicted w,h when matching predicts to targets
 # Train related
 gradient_accumulation_steps = 1  # used to simulate larger batch sizes
 batch_size = 2  # if gradient_accumulation_steps > 1, this is the micro-batch size
@@ -128,6 +130,7 @@ device_type = 'cuda' if 'cuda' in device else 'cpu'  # for later use in torch.au
 ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
 ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
 
+torch.multiprocessing.set_sharing_strategy('file_system')  # TODO: see if this solves the too many open files error w/o slowing down
 
 # Dataloader
 data_dir = os.path.join('data', dataset_name.strip('nano_').strip('blank_'))
@@ -259,6 +262,7 @@ if model_name == 'yolov2':
         lambda_burnin=lambda_burnin,
         anchors_burnin_n_seen_img=anchors_burnin_n_seen_img,
         noobj_iou_thresh=noobj_iou_thresh,
+        match_by_anchors=match_by_anchors,
         prob_thresh=prob_thresh,
         nms_iou_thresh=nms_iou_thresh,
     )  # start with model_args from command line

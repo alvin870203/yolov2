@@ -43,11 +43,11 @@ class Yolov2Config:
     # FUTURE: loss-related options not mentioned in the paper but in the AlexeyAB's darknet
     #         ref: https://github.com/AlexeyAB/darknet/issues/279#issuecomment-347002399
     anchors_burnin_n_seen_img: int = 0.01  # the number of seen imgs to burn anchors cx,cy,w,h into target
-    # match_by_anchors: bool = False  # whether to take anchors as predicted w,h when matching predicts to targets
-    #                                 # (i.e., bias_match in darknet cfg)
+    match_by_anchors: bool = True  # whether to take anchors as predicted w,h when matching predicts to targets
+                                   # (i.e., bias_match in darknet cfg)
     # match_iou_type: str = 'default'  # 'default' or 'distance'
     noobj_iou_thresh: float = 0.6  # if best iou of a predicted box with any target is less than this, it's a noobj,
-    #                              # (i.e., thresh in darknet cfg)
+                                   # (i.e., thresh in darknet cfg)
     # rescore: bool = False  # whether to take the predicted iou as the target for the confidence score instead of 1.0
     # softmax_class: bool = False  # whether to use softmax for class prediction instead of mean squared error
 
@@ -82,7 +82,8 @@ class Yolov2Head(nn.Module):
         # N x 1024 x 13 (or 10~19 for img_h 320~608) x 13 (or 10~19 for img_h 320~608)
 
         # N x 512 x 26 (or 20~38 for img_h 320~608) x 26 (or 20~38 for img_h 320~608)
-        feat = self.unfold(feat).transpose(1, 2).permute(0, 2, 1).reshape(feat.shape[0], 2048, *x.shape[-2:])
+        # TODO: whether to add a conv as darknet cfg
+        feat = self.unfold(feat).reshape(feat.shape[0], 2048, *x.shape[-2:])
         # N x 2048 x 13 (or 10~19 for img_h 320~608) x 13 (or 10~19 for img_h 320~608)
 
         x = torch.cat([x, feat], dim=1)
@@ -211,15 +212,7 @@ class Yolov2(nn.Module):
         for logits_per_img, targets_per_img in zip(logits, targets):  # size(n_grid_h, n_grid_w, n_box_per_cell, (5 + n_class)); size(n_grid_h, n_grid_w, n_box_per_cell, 6)
 
             # TODO: follow AlexeyAB's darknet loss computation
-
-            # Burnin anchors cx,cy,w,h
             self.n_seen_img += 1
-            if self.n_seen_img <= self.config.anchors_burnin_n_seen_img:
-                xy_logits = logits_per_img[:, :, :, :2]  # size(n_grid_h, n_grid_w, n_box_per_cell, 2)
-                loss_burnin += F.mse_loss(xy_logits, torch.full_like(xy_logits, 0.5), reduction='sum')  # t_x,t_y = 0.5 means center of cell
-                wh_logits = logits_per_img[:, :, :, 2:4]  # size(n_grid_h, n_grid_w, n_box_per_cell, 2)
-                loss_burnin += F.mse_loss(wh_logits, torch.zeros_like(wh_logits), reduction='sum')  # t_w,t_h = 0 means w,h of anchor
-                # TODO: need to set targets as centered anchors? ref. https://github.dev/BBuf/Darknet
 
             # All idxs
             idx_y, idx_x, idx_box = torch.meshgrid(
@@ -239,6 +232,11 @@ class Yolov2(nn.Module):
             if obj_targets_mask.sum() <= 0:
                 conf_logits = logits_per_img[:, :, :, 4]  # size(n_grid_h, n_grid_w, n_box_per_cell)
                 loss_noobj += F.mse_loss(conf_logits, torch.zeros_like(conf_logits), reduction='sum')
+                if self.n_seen_img <= self.config.anchors_burnin_n_seen_img:
+                    xy_logits = logits_per_img[:, :, :, :2]  # size(n_grid_h, n_grid_w, n_box_per_cell, 2)
+                    loss_burnin += F.mse_loss(xy_logits, torch.full_like(xy_logits, 0.5), reduction='sum')  # t_x,t_y = 0.5 means center of cell
+                    wh_logits = logits_per_img[:, :, :, 2:4]  # size(n_grid_h, n_grid_w, n_box_per_cell, 2)
+                    loss_burnin += F.mse_loss(wh_logits, torch.zeros_like(wh_logits), reduction='sum')  # t_w,t_h = 0 means w,h of anchor
                 continue
 
             # AlexeyAB's darknet implementation uses only wh to calculate iou and ignore cxcy difference
@@ -246,20 +244,22 @@ class Yolov2(nn.Module):
             #       the img top-left corner, i.e., consider c_x, c_y in the paper
             # TODO: improve by referencing https://github.com/ultralytics/ultralytics/blob/main/ultralytics/utils/tal.py
 
-            # Coord of centered logits within the cells containing obj targets  # TODO: match_by_anchors
+            # Coord of centered logits within the cells containing obj targets
+            obj_logits = logits_per_img[obj_targets_idx_y, obj_targets_idx_x].detach()  # size(n_obj_box, n_box_per_cell, 5 + n_class)  # detach to avoid backprop through matching
             centered_obj_x1y1x2y2_logits = torch.stack([  # relative to the top-left corner of the cell & normalized by the grid cell w,h
-                0.5 - (anchors[:, 0] * torch.exp(logits_per_img[obj_targets_idx_y, obj_targets_idx_x, :, 2])) / 2,
-                0.5 - (anchors[:, 1] * torch.exp(logits_per_img[obj_targets_idx_y, obj_targets_idx_x, :, 3])) / 2,
-                0.5 + (anchors[:, 0] * torch.exp(logits_per_img[obj_targets_idx_y, obj_targets_idx_x, :, 2])) / 2,
-                0.5 + (anchors[:, 1] * torch.exp(logits_per_img[obj_targets_idx_y, obj_targets_idx_x, :, 3])) / 2,
-            ], dim=-1).detach()  # size(n_obj_box, n_box_per_cell, 4)  # detach to avoid backprop through matching
+                0.5 - (anchors[:, 0] * (1.0 if self.config.match_by_anchors else torch.exp(obj_logits[:, :, 2]))) / 2,
+                0.5 - (anchors[:, 1] * (1.0 if self.config.match_by_anchors else torch.exp(obj_logits[:, :, 3]))) / 2,
+                0.5 + (anchors[:, 0] * (1.0 if self.config.match_by_anchors else torch.exp(obj_logits[:, :, 2]))) / 2,
+                0.5 + (anchors[:, 1] * (1.0 if self.config.match_by_anchors else torch.exp(obj_logits[:, :, 3]))) / 2,
+            ], dim=-1)  # size(n_obj_box, n_box_per_cell, 4)
 
             # Coord of centered obj targets
+            obj_targets = targets_per_img[obj_targets_idx_y, obj_targets_idx_x, obj_targets_idx_box]  # size(n_obj_box, 6)
             centered_obj_x1y1x2y2_targets = torch.stack([  # relative to the top-left corner of the cell & normalized by the grid cell w,h
-                0.5 - targets_per_img[obj_targets_idx_y, obj_targets_idx_x, obj_targets_idx_box, 2] / 2,
-                0.5 - targets_per_img[obj_targets_idx_y, obj_targets_idx_x, obj_targets_idx_box, 3] / 2,
-                0.5 + targets_per_img[obj_targets_idx_y, obj_targets_idx_x, obj_targets_idx_box, 2] / 2,
-                0.5 + targets_per_img[obj_targets_idx_y, obj_targets_idx_x, obj_targets_idx_box, 3] / 2,
+                0.5 - obj_targets[:, 2] / 2,
+                0.5 - obj_targets[:, 3] / 2,
+                0.5 + obj_targets[:, 2] / 2,
+                0.5 + obj_targets[:, 3] / 2,
             ], dim=-1).unsqueeze(-2)  # size(n_obj_box, 1, 4)
 
             # Debug msg
@@ -267,11 +267,8 @@ class Yolov2(nn.Module):
             # print(centered_obj_x1y1x2y2_targets)
 
             # Match logits to targets within each cell containing obj targets
-            obj_iou_matrix, obj_default_iou_matrix = self._batched_distance_box_iou(
-                centered_obj_x1y1x2y2_logits, centered_obj_x1y1x2y2_targets
-            )  # size(n_obj_box, n_box_per_cell, 1)
+            obj_iou_matrix = self._batched_box_iou(centered_obj_x1y1x2y2_logits, centered_obj_x1y1x2y2_targets)  # size(n_obj_box, n_box_per_cell, 1)
             obj_iou_matrix = obj_iou_matrix.squeeze(-1)  # size(n_obj_box, n_box_per_cell)
-            obj_default_iou_matrix = obj_default_iou_matrix.squeeze(-1)  # size(n_obj_box, n_box_per_cell)
             obj_max_iou, obj_max_logits_idx_box = obj_iou_matrix.max(dim=-1)  # size(n_obj_box,)
             # If a box logit is assigned to multiple targets, the one with the highest IoU is selected
             sorted_iou, sorted_idx = obj_max_iou.sort(dim=0, descending=True)  # size(n_obj_box,)
@@ -307,7 +304,6 @@ class Yolov2(nn.Module):
             ], dim=-1)  # size(n_unmatched_box, 4)
 
             # Coord of obj targets
-            obj_targets = targets_per_img[obj_targets_idx_y, obj_targets_idx_x, obj_targets_idx_box]  # size(n_obj_box, 6)
             obj_x1y1x2y2_targets = torch.stack([  # relative to the top-left corner of the img & normalized by the grid cell w,h
                 obj_targets_idx_x + obj_targets[:, 0] - obj_targets[:, 2] / 2,
                 obj_targets_idx_y + obj_targets[:, 1] - obj_targets[:, 3] / 2,
@@ -315,10 +311,8 @@ class Yolov2(nn.Module):
                 obj_targets_idx_y + obj_targets[:, 1] + obj_targets[:, 3] / 2,
             ], dim=-1)  # size(n_obj_box, 4)
 
-            # IoU btw all unmatched logits and all obj targets  # TODO: which iou_type to use?
-            unmatched_iou_matrix, unmatched_default_iou_matrix = self._batched_distance_box_iou(
-                unmatched_x1y1x2y2_logits, obj_x1y1x2y2_targets
-            )  # size(n_unmatched_box, n_obj_box)
+            # IoU btw all unmatched logits and all obj targets
+            unmatched_iou_matrix = self._batched_box_iou(unmatched_x1y1x2y2_logits, obj_x1y1x2y2_targets)  # size(n_unmatched_box, n_obj_box)
 
             # Select noobj logits from unmatched logits
             noobj_unmatched_idx = (unmatched_iou_matrix < self.config.noobj_iou_thresh).all(dim=-1)  # size(n_unmatched_box,)
@@ -327,6 +321,18 @@ class Yolov2(nn.Module):
             noobj_logits_idx_box = unmatched_logits_idx_box[noobj_unmatched_idx]  # size(n_noobj_box,)
 
             # Compute losses
+
+            # Burnin anchors cx,cy,w,h to unmatched logits
+            if self.n_seen_img <= self.config.anchors_burnin_n_seen_img:
+                unmatched_xy_logits = logits_per_img[
+                    unmatched_logits_idx_y, unmatched_logits_idx_x, unmatched_logits_idx_box, :2
+                ]  # size(n_unmatched_box, 2)
+                loss_burnin += F.mse_loss(unmatched_xy_logits, torch.full_like(unmatched_xy_logits, 0.5), reduction='sum')  # t_x,t_y = 0.5 means center of cell
+                unmatched_wh_logits = logits_per_img[
+                    unmatched_logits_idx_y, unmatched_logits_idx_x, unmatched_logits_idx_box, 2:4
+                ]  # size(n_unmatched_box, 2)
+                loss_burnin += F.mse_loss(unmatched_wh_logits, torch.zeros_like(unmatched_wh_logits), reduction='sum')  # t_w,t_h = 0 means w,h of anchor
+
             # Compute matched-box confidence loss
             matched_conf_logits = logits_per_img[matched_logits_idx_y, matched_logits_idx_x, matched_logits_idx_box, 4]  # size(n_matched_box,)
             loss_obj += F.mse_loss(matched_conf_logits, torch.ones_like(matched_conf_logits), reduction='sum')
