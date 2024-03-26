@@ -9,13 +9,13 @@ from_ckpt = 'saved/darknet19-448_imagenet2012/20240303-055517/ckpt_last.pt'
 
 # Data related
 dataset_name = 'voc'
-img_h = 416
-img_w = 416
+img_h = 608  # TODO: try larger sizes
+img_w = 608  # TODO: try larger sizes
 n_class = 20
 
 # Transform related
 # multiscale_min_sizes = (320, 352, 384, 416, 448, 480, 512, 544, 576, 608)
-multiscale_min_sizes = (416,)  # TODO: enable multiscale & decrease batch size to avoid OOM
+multiscale_min_sizes = (608,)  # TODO: enable multiscale & decrease batch size to avoid OOM  # TODO: try larger sizes
 min_wh = 1e-3
 # TODO: enable augmentation
 perspective = 0.015
@@ -62,17 +62,17 @@ lambda_obj = 1.0
 lambda_class = 1.0
 lambda_coord = 5.0
 lambda_burnin = 0.01
-anchors_burnin_n_seen_img = 12800
+anchors_burnin_n_seen_img = 83200  # 5 epochs, larger than AlexeyAB's 12800 seen imgs  # TODO: adjust with batch_size
 noobj_iou_thresh = 0.6
 match_by_anchors = True
 rescore = True
 
 # Train related
 # the number of examples per iter:
-# 128 batch_size * 1 grad_accum = 128 imgs/iter
+# 512 batch_size * 2 grad_accum = 128 imgs/iter
 # voc train set has 16,551 imgs, so 1 epoch ~= 130 iters
-gradient_accumulation_steps = 1
-batch_size = 128  # filled up the gpu memory on my machine
+gradient_accumulation_steps = 2  # TODO: try larger sizes
+batch_size = 64  # filled up the gpu memory on my machine  # TODO: try larger sizes
 max_iters = 40100  # more than paper's 160 epochs as AlexeyAB's darknet  # TODO: adjust with batch_size
 
 # Optimizer related
