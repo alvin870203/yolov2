@@ -83,7 +83,7 @@ class Yolov2Head(nn.Module):
         # N x 1024 x 13 (or 10~19 for img_h 320~608) x 13 (or 10~19 for img_h 320~608)
 
         # N x 512 x 26 (or 20~38 for img_h 320~608) x 26 (or 20~38 for img_h 320~608)
-        feat = self.conv3(feat)  # TODO: add a conv as darknet cfg
+        feat = self.conv3(feat)  # add a conv as darknet cfg
         # N x 64 x 26 (or 20~38 for img_h 320~608) x 26 (or 20~38 for img_h 320~608)
         feat = self.unfold(feat).reshape(feat.shape[0], 256, *x.shape[-2:])
         # N x 256 x 13 (or 10~19 for img_h 320~608) x 13 (or 10~19 for img_h 320~608)
@@ -188,7 +188,7 @@ class Yolov2(nn.Module):
         return iou - (centers_distance_squared / diagonal_distance_squared), iou
 
 
-    def _compute_loss(self, logits: Tensor, targets: Tensor) -> Tensor:  # TODO: many improvements from AlexeyAB's darknet
+    def _compute_loss(self, logits: Tensor, targets: Tensor) -> Tensor:
         # Debug test case:
         # logits[:, :, :, :, :] = 0
         """
@@ -212,9 +212,8 @@ class Yolov2(nn.Module):
 
         # Iterate over images in the batch
         for logits_per_img, targets_per_img in zip(logits, targets):  # size(n_grid_h, n_grid_w, n_box_per_cell, (5 + n_class)); size(n_grid_h, n_grid_w, n_box_per_cell, 6)
-
-            # TODO: follow AlexeyAB's darknet loss computation
-            self.n_seen_img += 1
+            if self.training:
+                self.n_seen_img += 1
 
             # All idxs
             idx_y, idx_x, idx_box = torch.meshgrid(
