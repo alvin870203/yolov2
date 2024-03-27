@@ -9,28 +9,43 @@ from_ckpt = 'saved/darknet19-448_imagenet2012/20240303-055517/ckpt_last.pt'
 
 # Data related
 dataset_name = 'voc'
-img_h = 608  # TODO: try larger sizes
-img_w = 608  # TODO: try larger sizes
+img_h = 608
+img_w = 608
 n_class = 20
 
 # Transform related
-# multiscale_min_sizes = (320, 352, 384, 416, 448, 480, 512, 544, 576, 608)
-multiscale_min_sizes = (608,)  # TODO: enable multiscale & decrease batch size to avoid OOM  # TODO: try larger sizes
+multiscale_min_sizes = (320, 352, 384, 416, 448, 480, 512, 544, 576, 608)  # TODO: enable multiscale
+# multiscale_min_sizes = (608,)  # TODO: enable multiscale
 min_wh = 1e-3
-# TODO: enable augmentation
-perspective = 0.015
-crop_scale = 0.8
+# TODO: stronger augmentation
+perspective = 0.1
+crop_scale = 0.3
 ratio_min = 0.5
 ratio_max = 2.0
 degrees = 0.5
-translate = 0.1
-scale = 0.25
+translate = 0.25
+scale = 0.5
 shear = 0.5
-brightness = 0.4
-contrast = 0.4
+brightness = 0.7
+contrast = 0.7
 saturation = 0.7
-hue = 0.015
+hue = 0.1
 flip_p = 0.5
+# TODO: enable augmentation
+# perspective = 0.015
+# crop_scale = 0.8
+# ratio_min = 0.5
+# ratio_max = 2.0
+# degrees = 0.5
+# translate = 0.1
+# scale = 0.25
+# shear = 0.5
+# brightness = 0.4
+# contrast = 0.4
+# saturation = 0.7
+# hue = 0.015
+# flip_p = 0.5
+# TODO: no augmentation
 # perspective = 0.0
 # crop_scale = 1.0
 # ratio_min = 1.0
@@ -44,7 +59,7 @@ flip_p = 0.5
 # saturation = 0.0
 # hue = 0.0
 # flip_p = 0.0
-letterbox = True
+letterbox = True  # TODO: try letterbox=False
 imgs_mean = (0.0, 0.0, 0.0)
 imgs_std = (1.0, 1.0, 1.0)
 fill = (123.0, 117.0, 104.0)
@@ -71,8 +86,8 @@ rescore = True
 # the number of examples per iter:
 # 512 batch_size * 2 grad_accum = 128 imgs/iter
 # voc train set has 16,551 imgs, so 1 epoch ~= 130 iters
-gradient_accumulation_steps = 2  # TODO: try larger sizes
-batch_size = 64  # filled up the gpu memory on my machine  # TODO: try larger sizes
+gradient_accumulation_steps = 2
+batch_size = 64  # filled up the gpu memory on my machine
 max_iters = 40100  # more than paper's 160 epochs as AlexeyAB's darknet  # TODO: adjust with batch_size
 
 # Optimizer related
