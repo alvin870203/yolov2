@@ -14,8 +14,9 @@ img_w = 608
 n_class = 20
 
 # Transform related
-multiscale_min_sizes = (320, 352, 384, 416, 448, 480, 512, 544, 576, 608)  # TODO: enable multiscale
-# multiscale_min_sizes = (608,)  # TODO: enable multiscale
+# TODO: enable multiscale
+multiscale_min_sizes = (320, 352, 384, 416, 448, 480, 512, 544, 576, 608)
+# multiscale_min_sizes = (608,)
 min_wh = 1e-3
 # TODO: stronger augmentation
 perspective = 0.1
@@ -31,7 +32,7 @@ contrast = 0.7
 saturation = 0.7
 hue = 0.1
 flip_p = 0.5
-# TODO: enable augmentation
+# TODO: default augmentation
 # perspective = 0.015
 # crop_scale = 0.8
 # ratio_min = 0.5
@@ -116,7 +117,7 @@ out_dir = f'out/yolov2_voc/{timestamp}'
 wandb_log = True
 wandb_project = 'voc'
 wandb_run_name = f'yolov2_{timestamp}'
-log_interval = 1  # don't print too often
+log_interval = 10  # don't print too often
 always_save_checkpoint = True  # only save when val improves if we expect overfit  # TODO: adjust
 
 # System related
