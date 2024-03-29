@@ -15,8 +15,8 @@ n_class = 20
 
 # Transform related
 # TODO: enable multiscale
-# multiscale_min_sizes = (320, 352, 384, 416, 448, 480, 512, 544, 576, 608)
-multiscale_min_sizes = (608,)
+multiscale_min_sizes = (320, 352, 384, 416, 448, 480, 512, 544, 576, 608)
+# multiscale_min_sizes = (608,)
 min_wh = 1e-3
 # Strong augmentation
 perspective = 0.1
@@ -50,7 +50,7 @@ lambda_obj = 1.0
 lambda_class = 1.0
 lambda_coord = 5.0
 lambda_burnin = 0.01
-anchors_burnin_n_seen_img = 83200  # 5 epochs, larger than AlexeyAB's 12800 seen imgs
+anchors_burnin_n_seen_img = 166400  # 10 epochs, larger than AlexeyAB's 12800 seen imgs  # TODO: adjust with batch_size
 noobj_iou_thresh = 0.6
 match_by_anchors = True
 rescore = True
@@ -61,7 +61,7 @@ rescore = True
 # voc train set has 16,551 imgs, so 1 epoch ~= 130 iters
 gradient_accumulation_steps = 2
 batch_size = 64  # filled up the gpu memory on my machine
-max_iters = 40100  # more than paper's 160 epochs as AlexeyAB's darknet
+max_iters = 78000  # 600 epochs, about a day on my machine  # TODO: adjust with batch_size
 
 # Optimizer related
 optimizer_type = 'sgd'  # TODO: sgd causes nan loss when no warmup
@@ -70,10 +70,10 @@ beta1 = 0.9
 beta2 = 0.999
 weight_decay = 5e-4
 grad_clip = 0.0  # clip gradients at this value, or disable if == 0.0
-decay_lr = 'step'  # whether to decay the learning rate
-warmup_iters = 390  # warmup 3 epochs, sgd causes nan loss when no warmup
-lr_decay_iters = (20000, 30000)  # as AlexeyAB's darknet, not decay at 60 & 90 epoch as paper
-min_lr = 0.1  # decay 1/10 every milestone
+decay_lr = 'cosine'  # whether to decay the learning rate
+warmup_iters = 390  # warmup 3 epochs, sgd causes nan loss when no warmup  # TODO: adjust with batch_size
+lr_decay_iters = 78000  # should be ~= max_iters  # TODO: adjust with batch_size
+min_lr = 5e-5  # should be ~= learning_rate/10
 use_fused = True  # somehow use_fused=True is incompatible to compile=True in this model
 
 # Eval related
